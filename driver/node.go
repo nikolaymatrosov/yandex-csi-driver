@@ -198,6 +198,16 @@ func (d *Driver) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeRequ
 		if err := d.mounter.Mount(source, target, fsType, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
+
+		// a disk restored from a snapshot into a larger volume keeps the snapshot's filesystem size
+		r := mountutil.NewResizeFs(exec.New())
+		if need, err := r.NeedResize(source, target); err != nil {
+			return nil, status.Errorf(codes.Internal, "NodeStageVolume could not check if volume %q needs resize: %v", req.VolumeId, err)
+		} else if need {
+			if _, err := r.Resize(source, target); err != nil {
+				return nil, status.Errorf(codes.Internal, "NodeStageVolume could not resize volume %q: %v", req.VolumeId, err)
+			}
+		}
 	} else {
 		log.Info("source device is already mounted to the target path")
 	}

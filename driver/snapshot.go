@@ -88,6 +88,9 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	if err != nil {
 		return nil, createSnapshotErr(err)
 	}
+	if err := op.Error(); err != nil {
+		return nil, createSnapshotErr(err)
+	}
 	md, err := op.Metadata()
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
