@@ -22,12 +22,11 @@ ADD . /go/src/app
 ARG OS="linux"
 ARG ARCH="amd64"
 
-RUN export VERSION=$(cat VERSION)
-RUN export COMMIT=$(git rev-parse HEAD)
-RUN export GIT_TREE_STATE=$(git diff --quiet && echo 'clean' || echo 'dirty')
-
-RUN CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH go build -a \
-    -ldflags '-X github.com/deckhouse/yandex-csi-driver/driver.version=${VERSION} -X github.com/deckhouse/yandex-csi-driver/driver.commit=${COMMIT} -X github.com/deckhouse/yandex-csi-driver/driver.gitTreeState=${GIT_TREE_STATE}' \
+RUN VERSION=$(cat VERSION) \
+ && COMMIT=$(git rev-parse HEAD) \
+ && GIT_TREE_STATE=$(git diff --quiet && echo clean || echo dirty) \
+ && CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH go build -a \
+    -ldflags "-X github.com/deckhouse/yandex-csi-driver/driver.version=${VERSION} -X github.com/deckhouse/yandex-csi-driver/driver.commit=${COMMIT} -X github.com/deckhouse/yandex-csi-driver/driver.gitTreeState=${GIT_TREE_STATE}" \
     -o /go/bin/yandex-csi-driver \
     github.com/deckhouse/yandex-csi-driver/cmd/yandex-csi-driver
 
