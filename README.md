@@ -115,19 +115,16 @@ Volume statistics are exposed through the CSI-conformant endpoints. Monitoring s
 
 ### Kubernetes Compatibility
 
-yandex-csi-driver is supported in Kubernetes >=1.15 only.
-
-**Requirements:**
-
-* `--allow-privileged` flag must be set to true for both the API server and the kubelet
-* `--feature-gates=VolumeSnapshotDataSource=true,CSINodeInfo=true,CSIDriverRegistry=true` feature gate flags must be set to true for both the API server and the kubelet
-* Mount Propagation needs to be enabled. If you use Docker, the Docker daemon of the cluster nodes must allow shared mounts.
+Tested on Kubernetes v1.37 (Talos Linux).
 
 ### Installing driver
 
 Install the Helm chart from this repository (the Yandex.Cloud service account key and folder ID are passed base64-encoded):
 
 ```bash
+FOLDER=$(yc config get folder-id)   # folder where disks are created
+git clone --branch v0.16.0 https://github.com/nikolaymatrosov/yandex-csi-driver && cd yandex-csi-driver
+
 # snapshot CRDs and snapshot-controller (external-snapshotter v8.7.0), before the chart
 SNAP=v8.7.0
 kubectl apply -k "github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=$SNAP"
@@ -143,10 +140,11 @@ SA_NODE=$(yc iam service-account create --name csi-node --format json | jq -r .i
 yc resource-manager folder add-access-binding $FOLDER --role compute.viewer --subject serviceAccount:$SA_NODE
 yc iam key create --service-account-id $SA_NODE --output sa-node-key.json
 
+# omit the nodeServiceAccountJSON line to use the controller key on nodes
 helm install yandex-csi charts/yandex-csi-controller -n kube-system \
   --set serviceAccountJSON=$(base64 < sa-key.json | tr -d '\n') \
-  --set folderID=$(printf %s $FOLDER | base64) \
-  --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n')   # omit to use the controller key on nodes
+  --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n') \
+  --set folderID=$(printf %s $FOLDER | base64)
 ```
 
 Install into `kube-system`, or into any namespace labeled `pod-security.kubernetes.io/enforce=privileged`

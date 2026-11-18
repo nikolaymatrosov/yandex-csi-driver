@@ -50,12 +50,6 @@ spec:
           - name: ADDRESS
             value: "{{ $.Values.defaults.csiPath }}/{{ $.Values.defaults.csiSockName }}"
 
-          - name: POD_NAME
-            valueFrom:
-              fieldRef:
-                apiVersion: v1
-                fieldPath: metadata.name
-
           - name: NAMESPACE
             valueFrom:
               fieldRef:

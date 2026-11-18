@@ -1,5 +1,5 @@
 serviceAccountJSON: ""
-# base64 ключа SA с ролью compute.viewer; пусто: node-под использует serviceAccountJSON
+# base64-encoded key of an SA with compute.viewer; empty: node pods use serviceAccountJSON
 nodeServiceAccountJSON: ""
 folderID: ""
 
