@@ -125,6 +125,30 @@ yandex-csi-driver is supported in Kubernetes >=1.15 only.
 
 ### Installing driver
 
-Simply install everyhting from the [deploy path](deploy/1.17). Be sure to replace:
- * [ServiceAccountJSON key](deploy/1.17/secret.yaml) with the appropriate key from your Yandex.Cloud account.
- * [--folder-id](deploy/1.17/csi-controller.yaml) with an appropriate Yandex.Cloud folder ID.
+Install the Helm chart from this repository (the Yandex.Cloud service account key and folder ID are passed base64-encoded):
+
+```bash
+# snapshot CRDs and snapshot-controller (external-snapshotter v8.7.0), before the chart
+SNAP=v8.7.0
+kubectl apply -k "github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=$SNAP"
+kubectl apply -k "github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=$SNAP"
+
+# controller service account (compute.editor)
+SA=$(yc iam service-account create --name csi-controller --format json | jq -r .id)
+yc resource-manager folder add-access-binding $FOLDER --role compute.editor --subject serviceAccount:$SA
+yc iam key create --service-account-id $SA --output sa-key.json
+
+# optional: separate read-only key for the node pods (compute.viewer)
+SA_NODE=$(yc iam service-account create --name csi-node --format json | jq -r .id)
+yc resource-manager folder add-access-binding $FOLDER --role compute.viewer --subject serviceAccount:$SA_NODE
+yc iam key create --service-account-id $SA_NODE --output sa-node-key.json
+
+helm install yandex-csi charts/yandex-csi-controller -n kube-system \
+  --set serviceAccountJSON=$(base64 < sa-key.json | tr -d '\n') \
+  --set folderID=$(printf %s $FOLDER | base64) \
+  --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n')   # omit to use the controller key on nodes
+```
+
+Install into `kube-system`, or into any namespace labeled `pod-security.kubernetes.io/enforce=privileged`
+(`kubectl label ns <ns> pod-security.kubernetes.io/enforce=privileged`). Otherwise Pod Security (`baseline`, the Talos default)
+rejects the privileged node pod (hostPath) and the controller pod (`hostNetwork`).
