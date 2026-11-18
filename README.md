@@ -62,6 +62,50 @@ volumeBindingMode: WaitForFirstConsumer
 
 The block size defines the maximum size of a network disk: 8 TiB for the default 4 KiB block, and twice as much for every next block size, up to 256 TiB for a 128 KiB block. The block size cannot be changed after a disk is created.
 
+### Snapshots
+
+Snapshots are supported through the standard `VolumeSnapshot` API. The `snapshot.storage.k8s.io` CRDs and the snapshot-controller must be installed **before** the chart, otherwise the `yc-csi-snapclass` `VolumeSnapshotClass` is not created (it appears on the next `helm upgrade`).
+
+```yaml
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: data-snap
+spec:
+  volumeSnapshotClassName: yc-csi-snapclass
+  source:
+    persistentVolumeClaimName: data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data-restored
+spec:
+  storageClassName: yc-network-ssd
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: data-snap
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 4Gi
+```
+
+With `volumeBindingMode: WaitForFirstConsumer` the new disk is created in the zone of the Pod that uses the PVC, so a snapshot can be restored in another zone.
+
+Limitations:
+
+* Snapshots are crash-consistent and are billed by Yandex.Cloud.
+* The cloud has a snapshot quota (32 snapshots and 400 GB per cloud according to the docs, check your own cloud).
+* The `blockSize` of the new volume's StorageClass must match the source disk's block size.
+* `ListSnapshots` is not supported: snapshots that already exist in the cloud cannot be imported.
+* Volume cloning (PVC as `dataSource`) is not supported.
+
+### Volumes per node
+
+The node reports how many CSI volumes it can attach (`CSINode` `allocatable.count`). On VMs with `PCI_TOPOLOGY_V2` the limit is 62 devices for up to 4 vCPU and 80 for 6+ vCPU, boot disk included, so a 2 vCPU node reports 61. Yandex.Cloud docs also say that a VM with more than 14 devices attached may fail to start after a restart; this has not been verified for `PCI_TOPOLOGY_V2` yet. Older `PCI_TOPOLOGY_V1` VMs keep the old limits (8 or 14).
+
 ### Volume Statistics
 
 Volume statistics are exposed through the CSI-conformant endpoints. Monitoring systems such as Prometheus can scrape metrics and provide insights into volume usage.
