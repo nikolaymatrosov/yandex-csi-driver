@@ -105,7 +105,7 @@ Limitations:
 
 ### Volumes per node
 
-The node reports how many CSI volumes it can attach (`CSINode` `allocatable.count`). On VMs with `PCI_TOPOLOGY_V2` the limit is 62 devices for up to 4 vCPU and 80 for 6+ vCPU, boot disk included, so a 2 vCPU node reports 61. Yandex.Cloud docs also say that a VM with more than 14 devices attached may fail to start after a restart; this has not been verified for `PCI_TOPOLOGY_V2` yet. Older `PCI_TOPOLOGY_V1` VMs keep the old limits (8 or 14).
+The node reports how many CSI volumes it can attach (`CSINode` `allocatable.count`). On VMs with `PCI_TOPOLOGY_V2` the limit is 62 devices for up to 4 vCPU and 80 for 6+ vCPU, boot disk included, so a 2 vCPU node reports 61. Yandex.Cloud docs also say that a VM with more than 14 devices attached may fail to start after a restart; this has not been verified for `PCI_TOPOLOGY_V2` yet. VMs without `PCI_TOPOLOGY_V2` (including those that report no PCI topology) keep the old limits (8 or 14).
 
 ### Volume Statistics
 
