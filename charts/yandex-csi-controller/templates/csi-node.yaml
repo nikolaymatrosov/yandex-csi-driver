@@ -140,7 +140,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ include "yandex-csi-controller.name" $ }}
-                  key: serviceAccountJSON
+                  key: {{ if $.Values.nodeServiceAccountJSON }}nodeServiceAccountJSON{{ else }}serviceAccountJSON{{ end }}
 
           image: {{ $.Values.image.repository }}:{{ $.Values.image.tag | default (printf "v%s" $.Chart.AppVersion) }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}

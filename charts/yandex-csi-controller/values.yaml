@@ -1,4 +1,6 @@
 serviceAccountJSON: ""
+# base64 ключа SA с ролью compute.viewer; пусто: node-под использует serviceAccountJSON
+nodeServiceAccountJSON: ""
 folderID: ""
 
 # defaultStorageclass: 
