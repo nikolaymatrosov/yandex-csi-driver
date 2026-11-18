@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/deckhouse/yandex-csi-driver/ychelpers"
 	"github.com/sirupsen/logrus"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	"google.golang.org/grpc/codes"
@@ -401,8 +402,19 @@ func disksLimit(platformID string, cores int64, topo compute.PCITopology) int64 
 func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.WithField("method", "node_get_info").Info("node get info called")
 
+	// Retry the metadata lookup if it failed at startup: the driver container is not restarted on registration failure.
+	// Values stay in locals: driver state is never mutated here, so no locking is needed.
+	hostID, zone, region := d.hostID, d.zone, d.region
+	if hostID == "" {
+		identity, err := ychelpers.GetInstanceIdentity()
+		if err != nil {
+			return nil, status.Errorf(codes.Unavailable, "instance metadata service unavailable: %v", err)
+		}
+		hostID, zone, region = identity.InstanceID, identity.AvailabilityZone, identity.Region
+	}
+
 	instance, err := d.sdk.Compute().Instance().Get(context.TODO(), &compute.GetInstanceRequest{
-		InstanceId: d.hostID,
+		InstanceId: hostID,
 		View:       0,
 	})
 	if err != nil {
@@ -443,14 +455,14 @@ func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi
 	}).Info()
 
 	return &csi.NodeGetInfoResponse{
-		NodeId:            d.hostID,
+		NodeId:            hostID,
 		MaxVolumesPerNode: maxVolumesPerNode,
 
 		// make sure that the driver works on this particular region only
 		AccessibleTopology: &csi.Topology{
 			Segments: map[string]string{
-				regionTopologyKey: d.region,
-				zoneTopologyKey:   d.zone,
+				regionTopologyKey: region,
+				zoneTopologyKey:   zone,
 			},
 		},
 	}, nil

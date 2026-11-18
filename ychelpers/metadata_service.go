@@ -18,21 +18,20 @@ limitations under the License.
 package ychelpers
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	yclient "github.com/yandex-cloud/go-sdk"
 )
 
 type YandexInstanceIdentity struct {
-	AvailabilityZone string `json:"availabilityZone"`
-	InstanceID       string `json:"instanceId"`
-	PrivateIP        string `json:"privateIp"`
-	Region           string `json:"region"`
+	AvailabilityZone string
+	InstanceID       string
+	Region           string
 }
 
 var (
@@ -40,64 +39,58 @@ var (
 	httpTimeoutSeconds = 15
 )
 
+const metadataHint = "check that the VM has gce-http-endpoint enabled and 169.254.169.254 is reachable from hostNetwork pods"
+
+// GetInstanceIdentity reads the instance id and zone from the GCE-format metadata endpoint.
 func GetInstanceIdentity() (YandexInstanceIdentity, error) {
-	var metadataUrl = baseMetadataUrl
-	metadataUrl.Path = "/latest/dynamic/instance-identity/document"
+	client := http.Client{Timeout: time.Duration(httpTimeoutSeconds) * time.Second}
 
-	client := http.Client{
-		Timeout: time.Duration(httpTimeoutSeconds) * time.Second,
-	}
-
-	resp, err := client.Get(metadataUrl.String())
+	id, err := metadataGet(&client, "/computeMetadata/v1/instance/id")
 	if err != nil {
 		return YandexInstanceIdentity{}, err
 	}
-
-	//nolint:errcheck
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return YandexInstanceIdentity{}, fmt.Errorf("non-200 status %q returned on GET at URL %q", resp.StatusCode, metadataUrl.String())
-	}
-
-	identityBytes, err := io.ReadAll(resp.Body)
+	rawZone, err := metadataGet(&client, "/computeMetadata/v1/instance/zone")
 	if err != nil {
 		return YandexInstanceIdentity{}, err
 	}
+	zone, region := zoneRegion(rawZone)
 
-	var identity YandexInstanceIdentity
-	err = json.Unmarshal(identityBytes, &identity)
-	if err != nil {
-		return YandexInstanceIdentity{}, err
-	}
-
-	return identity, nil
+	return YandexInstanceIdentity{InstanceID: id, AvailabilityZone: zone, Region: region}, nil
 }
 
-func GetHostname() (string, error) {
-	var metadataUrl = baseMetadataUrl
-	metadataUrl.Path = "/latest/meta-data/hostname"
+func metadataGet(client *http.Client, path string) (string, error) {
+	u := baseMetadataUrl
+	u.Path = path
 
-	client := http.Client{
-		Timeout: time.Duration(httpTimeoutSeconds) * time.Second,
-	}
-
-	resp, err := client.Get(metadataUrl.String())
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("Metadata-Flavor", "Google")
 
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GET %s: %w (%s)", u.String(), err, metadataHint)
+	}
 	//nolint:errcheck
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("non-200 status %q returned on GET at URL %q", resp.StatusCode, metadataUrl.String())
+		return "", fmt.Errorf("GET %s: unexpected status %d (%s)", u.String(), resp.StatusCode, metadataHint)
 	}
 
-	hostname, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("GET %s: %w", u.String(), err)
 	}
+	return strings.TrimSpace(string(body)), nil
+}
 
-	return string(hostname), nil
+// zoneRegion accepts both "ru-central1-a" and "projects/<id>/zones/ru-central1-a".
+func zoneRegion(raw string) (zone, region string) {
+	zone = raw[strings.LastIndex(raw, "/")+1:]
+	if i := strings.LastIndex(zone, "-"); i >= 0 {
+		region = zone[:i]
+	}
+	return zone, region
 }
