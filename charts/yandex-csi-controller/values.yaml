@@ -13,8 +13,8 @@ sidecars:
   nodeDriverRegistrar:
     image:
       pullPolicy: IfNotPresent
-      repository: quay.io/k8scsi/csi-node-driver-registrar
-      tag: v1.3.0
+      repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+      tag: v2.18.0
 
     extraArgs:
       v: 2
@@ -27,13 +27,12 @@ sidecars:
   provisioner:
     image:
       pullPolicy: IfNotPresent
-      repository: k8s.gcr.io/sig-storage/csi-provisioner
-      tag: v3.1.0
+      repository: registry.k8s.io/sig-storage/csi-provisioner
+      tag: v6.4.0
 
     extraArgs:
       default-fstype: ext4
       feature-gates: "Topology=true"
-      capacity-ownerref-level: 2
       worker-threads: 10
       v: 5
       timeout: 600s
@@ -49,8 +48,8 @@ sidecars:
   attacher:
     image: 
       pullPolicy: IfNotPresent
-      repository: k8s.gcr.io/sig-storage/csi-attacher
-      tag: v3.4.0
+      repository: registry.k8s.io/sig-storage/csi-attacher
+      tag: v4.13.0
 
     extraArgs:
       v: 5
@@ -66,8 +65,8 @@ sidecars:
   resizer:
     image: 
       pullPolicy: IfNotPresent
-      repository: k8s.gcr.io/sig-storage/csi-resizer
-      tag: v1.5.0
+      repository: registry.k8s.io/sig-storage/csi-resizer
+      tag: v2.3.0
 
     extraArgs:
       v: 5
@@ -101,8 +100,8 @@ sidecars:
   livenessprobe:
     image: 
       pullPolicy: IfNotPresent
-      repository: k8s.gcr.io/sig-storage/livenessprobe
-      tag: v2.5.0
+      repository: registry.k8s.io/sig-storage/livenessprobe
+      tag: v2.20.0
 
     extraArgs: {}
     resources: {}
@@ -113,7 +112,7 @@ sidecars:
 
 image: 
   pullPolicy: IfNotPresent
-  repository: registry.deckhouse.io/yandex-csi-driver/yandex-csi-driver
+  repository: ghcr.io/nikolaymatrosov/yandex-csi-driver
   # Overrides the image tag whose default is v{{ .Chart.AppVersion }}
   tag: ""
 
