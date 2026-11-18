@@ -361,6 +361,39 @@ func (d *Driver) NodeGetCapabilities(_ context.Context, _ *csi.NodeGetCapabiliti
 	}, nil
 }
 
+// disksLimit returns the maximum number of devices (including the boot disk) that can be attached to a VM.
+// See: https://yandex.cloud/ru/docs/compute/concepts/limits
+func disksLimit(platformID string, cores int64, topo compute.PCITopology) int64 {
+	if topo == compute.PCITopology_PCI_TOPOLOGY_V2 {
+		if cores <= 4 {
+			return 62
+		}
+		return 80
+	}
+
+	switch platformID {
+	// Intel Broadwell, Intel Broadwell with NVIDIA® Tesla® V100
+	case "standard-v1", "gpu-standard-v1":
+		if cores > 18 {
+			return 14
+		}
+		return 8
+	// Intel Cascade Lake, Intel Cascade Lake with NVIDIA® Tesla® V100
+	case "standard-v2", "gpu-standard-v2":
+		if cores > 20 {
+			return 14
+		}
+		return 8
+	// Intel Ice Lake, Ice Lake Compute-optimized
+	case "standard-v3", "highfreq-v3":
+		if cores > 32 {
+			return 14
+		}
+		return 8
+	}
+	return 8
+}
+
 // NodeGetInfo returns the supported capabilities of the node server. This
 // should eventually return the droplet ID if possible. This is used so the CO
 // knows where to place the workload. The result of this function will be used
@@ -389,43 +422,13 @@ func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi
 		}
 	}
 
-	// See: https://cloud.yandex.ru/docs/compute/concepts/limits
-	// When a VM is starting, a maximum of 14 devices, including the boot disk and a NIC, can be connected to it. Other devices must be connected to a running VM. Please note: If you restart a VM with more than 14 devices connected, it will not be able to load and run.
-	var disksLimit int64
+	topo := instance.GetHardwareGeneration().GetLegacyFeatures().GetPciTopology()
+	limit := disksLimit(instance.GetPlatformId(), instance.GetResources().GetCores(), topo)
 
-	switch instance.GetPlatformId() {
-	// Intel Broadwell, Intel Broadwell with NVIDIA® Tesla® V100
-	case "standard-v1", "gpu-standard-v1":
-		if instance.GetResources().Cores > 18 {
-			disksLimit = 14
-		} else {
-			disksLimit = 8
-		}
-	// Intel Cascade Lake, Intel Cascade Lake with NVIDIA® Tesla® V100
-	case "standard-v2", "gpu-standard-v2":
-		if instance.GetResources().Cores > 20 {
-			disksLimit = 14
-		} else {
-			disksLimit = 8
-		}
-	// Intel Ice Lake, Ice Lake Compute-optimized
-	case "standard-v3", "highfreq-v3":
-		if instance.GetResources().Cores > 32 {
-			disksLimit = 14
-		} else {
-			disksLimit = 8
-		}
-	// other
-	default:
-		disksLimit = 8
-	}
-
-	var maxVolumesPerNode int64
-
-	if bootDisksCount+secondaryDisksCount+networkInterfacesCount < 14 {
-		maxVolumesPerNode = disksLimit - bootDisksCount - nonCSISecondaryDisksCount
-	} else {
-		maxVolumesPerNode = disksLimit - bootDisksCount - nonCSISecondaryDisksCount - networkInterfacesCount
+	maxVolumesPerNode := limit - bootDisksCount - nonCSISecondaryDisksCount
+	// When a VM is starting, a maximum of 14 devices (boot disk and NICs included) can be attached; V2 topology does not count NICs.
+	if topo != compute.PCITopology_PCI_TOPOLOGY_V2 && bootDisksCount+secondaryDisksCount+networkInterfacesCount >= 14 {
+		maxVolumesPerNode -= networkInterfacesCount
 	}
 
 	d.log.WithFields(logrus.Fields{
@@ -434,7 +437,8 @@ func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi
 		"filesystemsCount":          filesystemsCount,
 		"networkInterfacesCount":    networkInterfacesCount,
 		"nonCSISecondaryDisksCount": nonCSISecondaryDisksCount,
-		"disksLimit":                disksLimit,
+		"disksLimit":                limit,
+		"pciTopology":               topo.String(),
 		"maxVolumesPerNode":         maxVolumesPerNode,
 	}).Info()
 
