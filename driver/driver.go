@@ -80,11 +80,10 @@ type Driver struct {
 
 	clusterUUID string
 
-	srv         *grpc.Server
-	httpSrv     http.Server
-	log         *logrus.Entry
-	resizeLocks *RwMap
-	mounter     Mounter
+	srv     *grpc.Server
+	httpSrv http.Server
+	log     *logrus.Entry
+	mounter Mounter
 
 	sdk *ycloud.SDK
 
@@ -182,7 +181,6 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		zone:              zone,
 		mounter:           newMounter(log),
 		log:               log,
-		resizeLocks:       NewRwMap(),
 		waitActionTimeout: defaultWaitActionTimeout,
 
 		clusterUUID: clusterUUID,

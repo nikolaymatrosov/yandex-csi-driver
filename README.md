@@ -38,7 +38,7 @@ After successful expansion, the _status_ section of the PVC object will reflect 
 
 Important notes:
 
-* Since Yandex.Cloud Compute Disks **do not** support online resize yet, after resizing a PVC object you have to manually delete a Pod object so that a Disk detaches from Instance, allowing to resize itself.
+* Expansion works on a running Pod: the disk is resized in place and the filesystem is expanded on the node, there is no need to delete the Pod.
 * Volumes can only be increased in size, not decreased; attempts to do so will lead to an error.
 * Expanding a volume that is larger than the target size will have no effect. The PVC object status section will continue to represent the actual volume capacity.
 * Resizing volumes other than through the PVC object (e.g., the DigitalOcean cloud control panel) is not recommended as this can potentially cause conflicts. Additionally, size updates will not be reflected in the PVC object status section immediately, and the section will eventually show the actual volume capacity.

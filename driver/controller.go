@@ -305,10 +305,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	log.Info("controller publish volume called")
 
-	if ok := d.resizeLocks.VolIdExists(req.VolumeId); ok {
-		return nil, status.Errorf(codes.Internal, "Resize required, not publishing")
-	}
-
 	// check if volume exist before trying to attach it
 	vol, err := d.sdk.Compute().Disk().Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
 	if err != nil {
@@ -597,13 +593,8 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		})
 	})
 	if err != nil {
-		if status.Code(err) == codes.FailedPrecondition && strings.Contains(status.Convert(err).Message(), "attached to non-stopped instance") {
-			d.resizeLocks.PutVolId(req.VolumeId)
-			return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s", req.GetVolumeId(), err.Error())
-		}
 		return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s", req.GetVolumeId(), err.Error())
 	}
-	d.resizeLocks.RemoveVolId(req.VolumeId)
 
 	log = log.WithField("new_volume_size", resizeBytes)
 	log.Info("volume was resized")
