@@ -82,8 +82,8 @@ sidecars:
   snapshotter:
     image: 
       pullPolicy: IfNotPresent
-      repository: k8s.gcr.io/sig-storage/csi-snapshotter
-      tag: v5.0.1
+      repository: registry.k8s.io/sig-storage/csi-snapshotter
+      tag: v8.7.0
 
     extraArgs:
       v: 5
