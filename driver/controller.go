@@ -192,6 +192,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			Volume: &csi.Volume{
 				VolumeId:      vol.Id,
 				CapacityBytes: vol.Size,
+				ContentSource: req.VolumeContentSource,
 				AccessibleTopology: []*csi.Topology{
 					{
 						Segments: map[string]string{
@@ -215,7 +216,26 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		BlockSize:   blockSize,
 	}
 
-	// TODO: Snapshots with GetVolumeContentSource
+	if src := req.GetVolumeContentSource(); src != nil {
+		snapID := src.GetSnapshot().GetSnapshotId()
+		if snapID == "" {
+			return nil, status.Error(codes.InvalidArgument, "only snapshot content source is supported")
+		}
+		snap, err := d.sdk.Compute().Snapshot().Get(ctx, &compute.GetSnapshotRequest{SnapshotId: snapID})
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return nil, status.Errorf(codes.NotFound, "snapshot %q not found", snapID)
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		if snap.Status != compute.Snapshot_READY {
+			return nil, status.Errorf(codes.Aborted, "snapshot %q is not ready, status %s", snapID, snap.Status)
+		}
+		if size < snap.DiskSize {
+			return nil, status.Errorf(codes.OutOfRange, "requested size %d is less than snapshot size %d", size, snap.DiskSize)
+		}
+		diskCreateRequest.Source = &compute.CreateDiskRequest_SnapshotId{SnapshotId: snapID}
+	}
 
 	log.WithField("volume_req", diskCreateRequest).Info("creating volume")
 	result, _, err := ychelpers.WaitForResult(ctx, d.sdk, func() (*operation.Operation, error) {
@@ -230,6 +250,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		Volume: &csi.Volume{
 			VolumeId:      newDisk.Id,
 			CapacityBytes: newDisk.Size,
+			ContentSource: req.VolumeContentSource,
 			AccessibleTopology: []*csi.Topology{
 				{
 					Segments: map[string]string{
