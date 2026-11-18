@@ -96,7 +96,8 @@ With `volumeBindingMode: WaitForFirstConsumer` the new disk is created in the zo
 
 Limitations:
 
-* Snapshots are crash-consistent and are billed by Yandex.Cloud.
+* Snapshots are crash-consistent: data still in application or OS caches is not included. For databases, freeze writes at the application level or use the database's own backups.
+* Snapshot storage is billed separately by Yandex.Cloud.
 * The cloud has a snapshot quota (32 snapshots and 400 GB per cloud according to the docs, check your own cloud).
 * The `blockSize` of the new volume's StorageClass must match the source disk's block size.
 * `ListSnapshots` is not supported: snapshots that already exist in the cloud cannot be imported.
