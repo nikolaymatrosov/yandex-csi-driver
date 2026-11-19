@@ -60,61 +60,6 @@ spec:
             - mountPath: /registration
               name: registration-dir
         {{- end }}
-        {{- with .Values.sidecars.livenessprobe }}
-        - name: csi-livenessprobe
-          args:
-            - --csi-address=$(ADDRESS)
-            - --health-port={{ $.Values.node.ports.healthPort }}
-            {{- with .extraArgs }}
-              {{- range $k, $v := . }}
-            - --{{- $k }}={{ $v -}}
-              {{end}}
-            {{- end }}
-
-          env:
-            - name: ADDRESS
-              value: "{{ $.Values.defaults.csiPath }}/{{ $.Values.defaults.csiSockName }}"
-
-          image: {{ .image.repository }}:{{ .image.tag }}
-          imagePullPolicy: {{ .image.pullPolicy }}
-
-          readinessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: {{ $.Values.node.ports.healthPort }}
-              scheme: HTTP
-            periodSeconds: 10
-            successThreshold: 1
-            timeoutSeconds: 1
-
-          livenessProbe:
-            failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: {{ $.Values.node.ports.healthPort }}
-              scheme: HTTP
-            periodSeconds: 10
-            successThreshold: 1
-            timeoutSeconds: 1
-
-          {{- with .resources | default $.Values.defaults.resources }}
-          resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-
-          {{- with .securityContext | default $.Values.defaults.securityContext }}
-          securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-
-          terminationMessagePath: {{ .terminationMessagePath | default $.Values.defaults.terminationMessagePath }}
-          terminationMessagePolicy: {{ .terminationMessagePolicy | default $.Values.defaults.terminationMessagePolicy }}
-
-          volumeMounts:
-            - name: plugin-dir
-              mountPath: {{ $.Values.defaults.csiPath }}
-        {{- end }}
         {{- with .Values.node }}
         - name: {{ include "yandex-csi-node.name" . }}
           args:
@@ -145,11 +90,21 @@ spec:
           image: {{ $.Values.image.repository }}:{{ $.Values.image.tag | default (printf "v%s" $.Chart.AppVersion) }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
 
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: {{ $.Values.node.ports.addressPort }}
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+
           livenessProbe:
             failureThreshold: 3
             httpGet:
               path: /healthz
-              port: {{ $.Values.node.ports.healthPort }}
+              port: {{ $.Values.node.ports.addressPort }}
               scheme: HTTP
             periodSeconds: 10
             successThreshold: 1

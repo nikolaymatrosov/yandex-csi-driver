@@ -97,19 +97,6 @@ sidecars:
     # terminationMessagePath: /dev/termination-log
     # terminationMessagePolicy: File
 
-  livenessprobe:
-    image: 
-      pullPolicy: IfNotPresent
-      repository: registry.k8s.io/sig-storage/livenessprobe
-      tag: v2.20.0
-
-    extraArgs: {}
-    resources: {}
-    securityContext: {}
-
-    # terminationMessagePath: /dev/termination-log
-    # terminationMessagePolicy: File
-
 image: 
   pullPolicy: IfNotPresent
   repository: ghcr.io/nikolaymatrosov/yandex-csi-driver
@@ -141,7 +128,6 @@ defaults:
 
 controller:
   ports:
-    healthPort: 9809
     addressPort: 12302
 
   extraArgs: {}
@@ -149,7 +135,6 @@ controller:
 
 node:
   ports:
-    healthPort: 9909
     addressPort: 12402
 
   extraArgs:

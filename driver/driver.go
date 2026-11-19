@@ -87,8 +87,6 @@ type Driver struct {
 
 	sdk *ycloud.SDK
 
-	healthChecker *HealthChecker
-
 	// ready defines whether the driver is ready to function. This value will
 	// be used by the `Identity` service via the `Probe()` method.
 	readyMu sync.Mutex // protects ready
@@ -148,8 +146,6 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		version = "dev"
 	}
 
-	healthChecker := NewHealthChecker(&yandexHealthChecker{sdk: sdk})
-
 	log := logrus.New().WithFields(logrus.Fields{
 		"region":      region,
 		"zone":        zone,
@@ -174,8 +170,6 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		clusterUUID: clusterUUID,
 
 		sdk: sdk,
-
-		healthChecker: healthChecker,
 	}, nil
 }
 
@@ -227,10 +221,10 @@ func (d *Driver) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		err := d.healthChecker.Check(r.Context())
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := probeSocket(r.Context(), grpcAddr); err != nil {
+			d.log.WithError(err).Warn("health check failed")
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
