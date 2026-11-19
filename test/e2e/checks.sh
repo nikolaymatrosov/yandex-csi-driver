@@ -5,6 +5,7 @@ set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 [ -f "$STATE" ] || die "no $STATE: run up.sh first"
+[ -f "$KUBECONFIG" ] || die "no $KUBECONFIG: run up.sh first"
 
 nums="$*"
 if [ -z "$nums" ]; then
