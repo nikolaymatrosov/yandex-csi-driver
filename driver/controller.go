@@ -218,11 +218,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	log.With("volume_req", diskCreateRequest).Info("creating volume")
 	op, err := d.disks.Create(ctx, diskCreateRequest)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, cloudErr(err)
 	}
 	newDisk, err := op.Wait(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, cloudErr(err)
 	}
 	newZone, newRegion := ychelpers.ZoneRegion(newDisk.ZoneId)
 
@@ -356,7 +356,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		_, err = op.Wait(ctx)
 	}
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, cloudErr(err)
 	}
 
 	log.Info("volume was attached")
@@ -395,7 +395,16 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
 
-	// check if Instance exist before trying to attach the volume to the droplet
+	if req.NodeId == "" { // InstanceIds is non-empty here: the len == 0 case returned above
+		// CSI: empty node_id = unpublish from all nodes; a public-cloud disk is on one VM at most (no multi-mount)
+		req.NodeId = disk.InstanceIds[0]
+	}
+	if !slices.Contains(disk.InstanceIds, req.NodeId) {
+		log.With("instance_ids", disk.InstanceIds).Info("assuming Disk is detached because it is not attached to this Instance")
+		return &csi.ControllerUnpublishVolumeResponse{}, nil
+	}
+
+	// check if Instance exist before trying to detach the volume from it
 	_, err = d.instances.Get(ctx, &compute.GetInstanceRequest{InstanceId: req.NodeId})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -422,7 +431,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 
 // ValidateVolumeCapabilities checks whether the volume capabilities requested
 // are supported.
-func (d *Driver) ValidateVolumeCapabilities(_ context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
+func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities Volume ID must be provided")
 	}
@@ -439,17 +448,23 @@ func (d *Driver) ValidateVolumeCapabilities(_ context.Context, req *csi.Validate
 	)
 	log.Info("validate volume capabilities called")
 
-	// if it's not supported (i.e: wrong region), we shouldn't override it
-	resp := &csi.ValidateVolumeCapabilitiesResponse{
-		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
-			VolumeCapabilities: []*csi.VolumeCapability{
-				{
-					AccessMode: supportedAccessMode,
-				},
-			},
-		},
+	if _, err := d.disks.Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId}); err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, status.Errorf(codes.NotFound, "volume %q does not exist", req.VolumeId)
+		}
+		return nil, err
 	}
 
+	// Confirmed is left empty when any of the capabilities is not supported
+	if violations := validateCapabilities(req.VolumeCapabilities); len(violations) > 0 {
+		msg := strings.Join(violations, "; ")
+		log.With("violations", msg).Info("capabilities are not supported")
+		return &csi.ValidateVolumeCapabilitiesResponse{Message: msg}, nil
+	}
+
+	resp := &csi.ValidateVolumeCapabilitiesResponse{
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{VolumeCapabilities: req.VolumeCapabilities},
+	}
 	log.With("confirmed", resp.Confirmed).Info("supported capabilities")
 	return resp, nil
 }
@@ -480,6 +495,10 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 
 	listRes, err := d.disks.List(ctx, listOpts)
 	if err != nil {
+		// the CSI spec asks for Aborted when starting_token is not one this driver returned
+		if req.StartingToken != "" && status.Code(err) == codes.InvalidArgument {
+			return nil, status.Error(codes.Aborted, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -615,6 +634,18 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	}
 
 	return &csi.ControllerExpandVolumeResponse{CapacityBytes: resizeBytes, NodeExpansionRequired: nodeExpansionRequired}, nil
+}
+
+// cloudErr turns an error of a cloud call into a gRPC status. InvalidArgument,
+// FailedPrecondition and NotFound keep their code, so that the user sees the cause
+// (a wrong zone, a disk that is already attached) instead of a retried Internal;
+// everything else, including quota and availability errors, is Internal.
+func cloudErr(err error) error {
+	switch c := status.Code(err); c {
+	case codes.InvalidArgument, codes.FailedPrecondition, codes.NotFound:
+		return status.Error(c, err.Error())
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 // maximumVolumeSize returns the maximum volume size supported by Yandex.Cloud

@@ -13,9 +13,7 @@ import (
 
 // skipUntilFixed lists the specs that fail on the driver as of this commit; the commits with the fixes remove them.
 const skipUntilFixed = "NodeUnpublishVolume should remove target path|" +
-	"NodeExpandVolume should fail when volume is not found|" +
-	"ListVolumes should fail when an invalid starting_token is passed|" +
-	"ValidateVolumeCapabilities should fail when the requested volume does not exist"
+	"NodeExpandVolume should fail when volume is not found"
 
 func TestSanity(t *testing.T) {
 	d := newTestDriver(t, newFakeCloud(testNode, testZone))
