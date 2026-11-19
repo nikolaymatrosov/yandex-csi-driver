@@ -4,7 +4,11 @@ set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 [ -f "$STATE" ] && die "$STATE exists: a cluster is already up (run down.sh first)"
-FOLDER_ID=${FOLDER_ID:-$(yc config get folder-id)}
+state_set ZONE "$ZONE"
+state_set ZONE2 "$ZONE2"
+state_set E2E_VERSION "$E2E_VERSION"
+FOLDER_ID=$(yc config get folder-id) # yc commands always use the profile's folder
+[ -n "$FOLDER_ID" ] || die "the yc profile has no folder-id (yc config set folder-id …)"
 SUBNET=default-$ZONE
 
 addr() { yc vpc address create --name "$1" --external-ipv4 zone="$ZONE" --format json | jq -r .external_ipv4_address.address; }
@@ -29,7 +33,7 @@ vm() { # NAME ZONE SUBNET CONFIG [STATIC_IP]
   local nat=nat-ip-version=ipv4
   if [ -n "${5:-}" ]; then nat="$nat,nat-address=$5"; fi
   yc compute instance create --name "$1" --zone "$2" --platform standard-v3 --cores 2 --memory 4 \
-    --create-boot-disk "image-name=$TALOS_IMAGE,size=10,type=network-hdd" \
+    --create-boot-disk "image-name=$TALOS_IMAGE,size=10,type=network-hdd,auto-delete=true" \
     --network-interface "subnet-name=$3,$nat,security-group-ids=$SG" \
     --metadata-from-file "user-data=$4" \
     --metadata-options aws-v1-http-endpoint=enabled >/dev/null
@@ -38,7 +42,7 @@ vm() { # NAME ZONE SUBNET CONFIG [STATIC_IP]
 vm_ip() { yc compute instance get "$1" --format json | jq -r '.network_interfaces[0].primary_v4_address.one_to_one_nat.address'; }
 
 # Some YC public IPs pass no TCP at all; Talos then logs "dial tcp ...: i/o timeout" from boot.
-dead() { [ "$(yc compute instance get-serial-port-output "$1" | grep -c 'i/o timeout' || true)" -gt 0 ]; }
+dead() { [ "$(yc compute instance get-serial-port-output "$1" | grep -c 'dial tcp.*i/o timeout' || true)" -gt 0 ]; }
 
 new_cp() {
   yc vpc address delete "$P-cp" >/dev/null
@@ -96,6 +100,14 @@ else
   state_set SUBNET2 "$P-$ZONE2"
 fi
 
+# service accounts first: folder roles take time to propagate before the chart starts using them
+state_set SA "$(yc iam service-account create --name "$P-csi" --format json | jq -r .id)"
+yc resource-manager folder add-access-binding "$FOLDER_ID" --role compute.editor --subject "serviceAccount:$SA" >/dev/null
+yc iam key create --service-account-id "$SA" --output "$WORK/sa-key.json" >/dev/null
+state_set SA_NODE "$(yc iam service-account create --name "$P-csi-node" --format json | jq -r .id)"
+yc resource-manager folder add-access-binding "$FOLDER_ID" --role compute.viewer --subject "serviceAccount:$SA_NODE" >/dev/null
+yc iam key create --service-account-id "$SA_NODE" --output "$WORK/sa-node-key.json" >/dev/null
+
 # 2-4. Talos config and VMs; workers are created after cp has a live IP (their config points at it)
 gen_config
 vm "$P-cp" "$ZONE" "$SUBNET" "$WORK/controlplane.yaml" "$CP"
@@ -122,13 +134,7 @@ k apply -k "github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref
 k apply -k "github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=$SNAP_VERSION"
 k -n kube-system rollout status deploy/snapshot-controller --timeout=10m
 
-# 6. service accounts and the driver chart
-state_set SA "$(yc iam service-account create --name "$P-csi" --format json | jq -r .id)"
-yc resource-manager folder add-access-binding "$FOLDER_ID" --role compute.editor --subject "serviceAccount:$SA" >/dev/null
-yc iam key create --service-account-id "$SA" --output "$WORK/sa-key.json" >/dev/null
-state_set SA_NODE "$(yc iam service-account create --name "$P-csi-node" --format json | jq -r .id)"
-yc resource-manager folder add-access-binding "$FOLDER_ID" --role compute.viewer --subject "serviceAccount:$SA_NODE" >/dev/null
-yc iam key create --service-account-id "$SA_NODE" --output "$WORK/sa-node-key.json" >/dev/null
+# 6. the driver chart
 retry 3 helm upgrade --install yandex-csi "$CHART" --version "$CHART_VER" -n kube-system \
   --set serviceAccountJSON="$(base64 < "$WORK/sa-key.json" | tr -d '\n')" \
   --set nodeServiceAccountJSON="$(base64 < "$WORK/sa-node-key.json" | tr -d '\n')" \
