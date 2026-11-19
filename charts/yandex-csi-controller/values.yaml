@@ -2,6 +2,9 @@ serviceAccountJSON: ""
 # base64-encoded key of an SA with compute.viewer; empty: node pods use serviceAccountJSON
 nodeServiceAccountJSON: ""
 folderID: ""
+# cluster_uuid label on disks and snapshots; empty: kube-system namespace UID
+# (looked up at install; under `helm template` the driver falls back to "default")
+clusterUUID: ""
 
 # defaultStorageclass: 
 # "yc-network-hdd"

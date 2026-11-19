@@ -215,6 +215,9 @@ spec:
           - --address=$(POD_IP):{{ .ports.addressPort }}
           - --endpoint=unix://$(ADDRESS)
           - --folder-id=$(YANDEX_FOLDER_ID)
+          {{- with $.Values.clusterUUID | default (dig "metadata" "uid" "" (lookup "v1" "Namespace" "" "kube-system")) }}
+          - --cluster-uuid={{ . }}
+          {{- end }}
         env:
           - name: ADDRESS
             value: "{{ $.Values.defaults.csiPath }}/{{ $.Values.defaults.csiSockName }}"
