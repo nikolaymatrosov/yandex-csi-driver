@@ -63,17 +63,33 @@ new_w2() { # ephemeral IP: known only after creation
   sg_allow "$W2"
 }
 
+# apid listens on :50000 from boot and the SG lets this machine in; a dead IP refuses TCP both ways.
+# curl: 7 = refused, 28 = timeout; anything else (TLS failure without a client cert) means TCP works.
+tcp_open() {
+  local ip rc=0
+  ip=$(vm_ip "$1") || return 1
+  case $ip in '' | null) return 1 ;; esac
+  curl -sk --connect-timeout 5 -o /dev/null "https://$ip:50000" || rc=$?
+  [ "$rc" != 7 ] && [ "$rc" != 28 ]
+}
+alive() { # NAME: poll up to 5 min; the serial "i/o timeout" shows up ~150 s after boot, a 60 s look missed it
+  local deadline=$(($(date +%s) + 300))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    tcp_open "$1" && return 0
+    dead "$1" && return 1
+    sleep 10
+  done
+  return 1
+}
 ensure_tcp() { # NAME RECREATE_FN: recreate the VM while its public IP is dead, at most 3 times
   local i
   for i in 1 2 3; do
-    sleep 60
-    dead "$1" || return 0
+    alive "$1" && return 0
     log "$1: public IP passes no TCP, recreating ($i/3)"
     yc compute instance delete "$1" >/dev/null
     "$2"
   done
-  sleep 60
-  if dead "$1"; then die "$1: public IP still passes no TCP after 3 recreations"; fi
+  alive "$1" || die "$1: public IP still passes no TCP after 3 recreations"
 }
 
 nodes_registered() { # all 3 nodes carry the zone label set by the CSI node plugin
