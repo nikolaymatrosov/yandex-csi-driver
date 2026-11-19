@@ -17,6 +17,8 @@ non-replicated disk for a couple of minutes, a KMS key.
 - Quotas. `ZONE` (default `ru-central1-a`): 4 vCPU, 8 GB RAM, 20 GB HDD, ~20 GB SSD, 2 static public IPs.
   `ZONE2` (default `ru-central1-e`): 2 vCPU, 4 GB RAM, 10 GB HDD, ~4 GB SSD and 186 GB non-replicated SSD
   (`compute.ssdNonReplicatedDisks.size`, 0 by default).
+  Check 03 also creates 2 disk placement groups in `ZONE2` (`compute.diskPlacementGroups.count`, 5 per cloud) and
+  holds one 93 GB non-replicated disk at a time.
 - `E2E_PREFIX` must not match other resources in the folder: `down.sh` deletes everything named `$E2E_PREFIX` or
   `$E2E_PREFIX-*`.
 
@@ -51,6 +53,10 @@ Checks run in order and depend on each other: `csi-test` from 02 is used by 04, 
 Checks are written for one ordered pass. On a kept cluster 04 after 05 fails (`csi-test` is then 8Gi, the restore asks
 for 4Gi), 09 needs `csi-snap-a` from 04, and 08 fails if `yc-network-ssd-kms` is left from an aborted run
 (StorageClass parameters are immutable; delete it first). A previous `results.md` is kept as `results.md.<timestamp>`.
+
+Check 03 reuses placement groups left from an aborted run (found by name `$E2E_PREFIX-pg-*`) and recreates its
+`yc-nrd-pg-*` StorageClasses with `kubectl apply`; if the group IDs changed, delete those StorageClasses first
+(parameters are immutable). `down.sh` deletes the groups after the disks.
 
 ## Results
 

@@ -52,6 +52,8 @@ done
 for id in $(yc_list compute snapshot list | labeled); do
   yc compute snapshot delete "$id" >/dev/null
 done
+# a placement group with disks cannot be deleted, so this comes after the disks
+for id in $(yc_list compute disk-placement-group list | named); do yc compute disk-placement-group delete "$id" >/dev/null; done
 
 # 4. network, KMS, IAM
 for id in $(yc_list vpc address list | named); do yc vpc address delete "$id" >/dev/null; done
@@ -72,6 +74,7 @@ left=$({
   yc_list compute disk list | named
   yc_list compute disk list | labeled
   yc_list compute snapshot list | labeled
+  yc_list compute disk-placement-group list | named
   yc_list vpc address list | named
   yc_list vpc security-group list | named
   yc_list vpc subnet list | named

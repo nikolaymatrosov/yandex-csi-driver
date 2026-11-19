@@ -27,6 +27,7 @@ export KUBECONFIG=$WORK/kubeconfig TALOSCONFIG=$WORK/talosconfig
 # Written by up.sh into state.env; defaults keep `set -u` and shellcheck quiet.
 CP=${CP:-} W1=${W1:-} W2=${W2:-} SG=${SG:-} SUBNET2=${SUBNET2:-}
 SA=${SA:-} SA_NODE=${SA_NODE:-} KS_UID=${KS_UID:-} NA1=${NA1:-} NA2=${NA2:-} N3=${N3:-}
+PG_SPREAD=${PG_SPREAD:-} PG_PART=${PG_PART:-} # written by check 03
 
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 die() { log "FATAL: $*"; exit 1; }
