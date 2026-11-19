@@ -141,8 +141,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		"block_size_bytes", blockSize,
 		"method", "create_volume",
 		"volume_capabilities", req.VolumeCapabilities,
-		"region", region,
-		"zone", zone,
+		"volume_region", region,
+		"volume_zone", zone,
 	)
 	log.Info("create volume called")
 
