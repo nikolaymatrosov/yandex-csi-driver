@@ -103,6 +103,52 @@ Limitations:
 * `ListSnapshots` is not supported: snapshots that already exist in the cloud cannot be imported.
 * Volume cloning (PVC as `dataSource`) is not supported.
 
+### Nonreplicated and io-m3 disks
+
+For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB. The driver rounds the requested size up (a 10Gi PVC gets a 93 GiB disk and is Bound with 93Gi; resizing to 100Gi gives 186 GiB). If the rounded size exceeds the PVC limit or the disk type maximum, the request fails with `OutOfRange`. Nonreplicated disks cannot have snapshots (a cloud limitation).
+
+### Encryption
+
+A disk can be encrypted with a Yandex Key Management Service key set in the `kmsKeyID` StorageClass parameter:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: yc-network-ssd-encrypted
+provisioner: yandex.csi.flant.com
+parameters:
+  typeID: network-ssd
+  kmsKeyID: abj0123456789abcdefg
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+```
+
+The controller service account needs the `kms.keys.encrypterDecrypter` role on the key. The key is applied only when a disk is created.
+
+### Disk labels
+
+Every disk gets the labels `cluster_uuid`, `csi-pvc-name` and `csi-pvc-namespace` (the values are cut to 63 characters, the label value limit in Yandex.Cloud). The PVC labels are filled in by external-provisioner, the chart enables this with `--extra-create-metadata`.
+
+### RWX
+
+The driver supports only `ReadWriteOnce`. A Filestore cannot be used through CSI: [attaching a file storage requires stopping the VM](https://yandex.cloud/ru/docs/compute/operations/filesystem/attach-to-vm). For `ReadWriteMany` use [csi-driver-nfs](https://github.com/kubernetes-csi/csi-driver-nfs) on top of your own NFS server or [k8s-csi-s3](https://github.com/yandex-cloud/k8s-csi-s3).
+
+### Comparison with the official driver
+
+Compared with the official [yc-csi-driver](https://github.com/yandex-cloud/yc-csi-driver) (v1.3.0):
+
+| | This driver | Official |
+|---|---|---|
+| Snapshots | yes | no |
+| Volume expansion | ONLINE (on a running Pod) | OFFLINE |
+| Volumes per node | from the VM topology | 5 |
+| Installation | Helm chart in OCI registry | manifests |
+| `kmsKeyID` | yes | yes |
+| PVC name and namespace labels | yes | yes |
+| Read-only multi-attach | no | yes |
+| csi-sanity | not yet (planned) | yes |
+
 ### Volumes per node
 
 The node reports how many CSI volumes it can attach (`CSINode` `allocatable.count`). On VMs with `PCI_TOPOLOGY_V2` the limit is 62 devices for up to 4 vCPU and 80 for 6+ vCPU, boot disk included, so a 2 vCPU node reports 61. Yandex.Cloud docs also say that a VM with more than 14 devices attached may fail to start after a restart; this has not been verified for `PCI_TOPOLOGY_V2` yet. VMs without `PCI_TOPOLOGY_V2` (including those that report no PCI topology) keep the old limits (8 or 14).
@@ -119,11 +165,10 @@ Tested on Kubernetes v1.37 (Talos Linux).
 
 ### Installing driver
 
-Install the Helm chart from this repository (the Yandex.Cloud service account key and folder ID are passed base64-encoded):
+Install the Helm chart from the OCI registry (the Yandex.Cloud service account key and folder ID are passed base64-encoded):
 
 ```bash
 FOLDER=$(yc config get folder-id)   # folder where disks are created
-git clone --branch v0.16.0 https://github.com/nikolaymatrosov/yandex-csi-driver && cd yandex-csi-driver
 
 # snapshot CRDs and snapshot-controller (external-snapshotter v8.7.0), before the chart
 SNAP=v8.7.0
@@ -141,7 +186,7 @@ yc resource-manager folder add-access-binding $FOLDER --role compute.viewer --su
 yc iam key create --service-account-id $SA_NODE --output sa-node-key.json
 
 # omit the nodeServiceAccountJSON line to use the controller key on nodes
-helm install yandex-csi charts/yandex-csi-controller -n kube-system \
+helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.18.0 -n kube-system \
   --set serviceAccountJSON=$(base64 < sa-key.json | tr -d '\n') \
   --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n') \
   --set folderID=$(printf %s $FOLDER | base64)
