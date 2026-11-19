@@ -30,7 +30,7 @@ check 11 "create volume: строк с дублем ключа zone" 0 "$dup"
 check 11 "create volume: строк без volume_region/volume_zone" 0 "$miss"
 
 for pat in 'expected operation response to be' too_many_pings Unauthenticated PermissionDenied; do
-  check 11 "нет «$pat» в логах" 0 "$(lines | grep -c "$pat" || true)"
+  check 11 "нет «${pat}» в логах" 0 "$(lines | grep -c "$pat" || true)"
 done
 
 pods=$(k -n kube-system get pods -l 'app in (yandex-csi-controller,yandex-csi-node)' -o json)
