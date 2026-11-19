@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# 09 (best effort): restart the controller while a disk is CREATING; the retried CreateVolume must answer
+# Aborted, and the PVC binds only after the disk is READY. Uses csi-snap-a from 04, deletes csi-snap-a/b.
+set -euo pipefail
+# shellcheck source=../lib.sh
+. "$(dirname "$0")/../lib.sh"
+state_load
+
+creating() {
+  yc compute disk list --format json |
+    jq -e --arg u "$KS_UID" 'any(.[]; .status == "CREATING" and .labels.cluster_uuid == $u)' >/dev/null
+}
+bound() { [ "$(kubectl get pvc csi-st -o jsonpath='{.status.phase}')" = Bound ]; }
+
+pvc_pod csi-st yc-network-ssd 4Gi "$NA1" csi-snap-a
+caught=0
+if wait_until 120 creating; then
+  k -n kube-system delete pod -l app=yandex-csi-controller --wait=false
+  caught=1
+fi
+k -n kube-system rollout status deploy/yandex-csi-controller --timeout=5m
+if ! wait_until 300 bound; then
+  fail 09 "PVC Bound после рестарта контроллера" Bound "$(k get pvc csi-st -o jsonpath='{.status.phase}')"
+elif [ "$caught" = 1 ] && [ "$(ctrl_log | grep -c 'is in status CREATING' || true)" -gt 0 ]; then
+  pass 09 "Aborted на CREATING, затем Bound" "is in status CREATING" "поймали, PVC Bound"
+else
+  skip 09 "Aborted на CREATING" "гонку не поймали (диск стал READY раньше), PVC Bound"
+fi
+
+k delete pod csi-st
+k delete pvc csi-st
+k delete volumesnapshot csi-snap-a csi-snap-b
