@@ -107,6 +107,35 @@ Limitations:
 
 For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB (93Gi, 186Gi, 279Gi, …). The driver does not round other sizes up, it rejects them with `OutOfRange`: a 10Gi PVC stays Pending with a `ProvisioningFailed` event, a resize to 100Gi fails with a `VolumeResizeFailed` event and the disk keeps its size (request 186Gi instead). So the PVC request, the PV and the disk always have the same size. Before v0.20.0 the driver rounded the size up; existing volumes keep working, but resizing them now needs a multiple of 93Gi. Nonreplicated disks cannot have snapshots (a cloud limitation).
 
+### Placement groups
+
+A disk can be put into an existing [disk placement group](https://yandex.cloud/en/docs/compute/concepts/disk-placement-group) with the `diskPlacementGroupId` StorageClass parameter; for a group with the `PARTITION` strategy also set `diskPlacementGroupPartition` (the partition number, from 1):
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: yc-nrd-partition
+provisioner: yandex.csi.flant.com
+parameters:
+  typeID: network-ssd-nonreplicated
+  diskPlacementGroupId: fhm0123456789abcdefg
+  diskPlacementGroupPartition: "2"
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+- matchLabelExpressions:
+  - key: failure-domain.beta.kubernetes.io/zone
+    values: [ru-central1-e]
+```
+
+* The driver neither creates nor deletes groups: create the group yourself (`yc compute disk-placement-group create`, Terraform) and put its ID into the StorageClass. The group is only applied when a disk is created.
+* A disk and its group must be in the same zone: set `allowedTopologies` to the zone of the group, otherwise the cloud refuses to create the disk and the PVC stays Pending with the cloud error in a `ProvisioningFailed` event.
+* A `PARTITION` group needs `diskPlacementGroupPartition`: the cloud does not pick a partition itself and answers `InvalidArgument` (`partition index must be between 1 and N`). `diskPlacementGroupPartition` without `diskPlacementGroupId`, or a value that is not a positive integer, is rejected by the driver with `InvalidArgument`.
+* The driver does not check the disk type: according to the documentation only `network-ssd-nonreplicated` disks can be in a group, the rest is up to the cloud.
+* Cloud limits: 5 placement groups per cloud (`compute.diskPlacementGroups.count`), up to 8 non-replicated disks per group, up to 5 partitions, a disk belongs to one group.
+* A repeated `CreateVolume` for an existing disk compares the group (and the partition, if set) with the StorageClass and answers `AlreadyExists` on a mismatch; a StorageClass without a group does not check it.
+
 ### Encryption
 
 A disk can be encrypted with a Yandex Key Management Service key set in the `kmsKeyID` StorageClass parameter:
@@ -148,8 +177,8 @@ Compared with the official [yc-csi-driver](https://github.com/yandex-cloud/yc-cs
 | Installation | Helm chart in OCI registry | manifests |
 | `kmsKeyID` | yes | yes |
 | PVC name and namespace labels | yes | yes |
-| Read-only multi-attach | no | yes |
-| csi-sanity | not yet (planned) | yes |
+| csi-sanity | yes | yes |
+| Placement groups | yes | yes |
 
 ### Volumes per node
 
@@ -195,7 +224,7 @@ yc resource-manager folder add-access-binding $FOLDER --role compute.viewer --su
 yc iam key create --service-account-id $SA_NODE --output sa-node-key.json
 
 # omit the nodeServiceAccountJSON line to use the controller key on nodes
-helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.20.0 -n kube-system \
+helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.21.0 -n kube-system \
   --set serviceAccountJSON=$(base64 < sa-key.json | tr -d '\n') \
   --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n') \
   --set folderID=$(printf %s $FOLDER | base64)
