@@ -105,7 +105,7 @@ Limitations:
 
 ### Nonreplicated and io-m3 disks
 
-For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB. The driver rounds the requested size up (a 10Gi PVC gets a 93 GiB disk and is Bound with 93Gi; resizing to 100Gi gives 186 GiB). If the rounded size exceeds the PVC limit or the maximum size for the disk's block size, the request fails with `OutOfRange`. Nonreplicated disks cannot have snapshots (a cloud limitation).
+For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB. The driver rounds the requested size up (a 10Gi PVC gets a 93 GiB disk and is Bound with 93Gi; resizing to 100Gi gives a 186 GiB disk and a 186Gi PV, while the PVC status keeps the requested 100Gi: that is how kubelet reports node expansion). If the rounded size exceeds the PVC limit or the maximum size for the disk's block size, the request fails with `OutOfRange`. Nonreplicated disks cannot have snapshots (a cloud limitation).
 
 ### Encryption
 
@@ -125,6 +125,8 @@ volumeBindingMode: WaitForFirstConsumer
 ```
 
 The controller service account needs the `kms.keys.encrypterDecrypter` role on the key. The key is applied only when a disk is created.
+
+A snapshot of an encrypted disk is encrypted with the same key. To restore it, use a StorageClass with the same `kmsKeyID`: the cloud refuses to create a disk from an encrypted snapshot with another key or without one (`KekID should be the same for request and encrypted source`), and the PVC stays Pending.
 
 ### Disk labels
 
