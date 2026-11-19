@@ -230,6 +230,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	newDisk := result.(*compute.Disk)
+	newZone, newRegion := ychelpers.ZoneRegion(newDisk.ZoneId)
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
@@ -239,8 +240,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			AccessibleTopology: []*csi.Topology{
 				{
 					Segments: map[string]string{
-						regionTopologyKey: region,
-						zoneTopologyKey:   zone,
+						regionTopologyKey: newRegion,
+						zoneTopologyKey:   newZone,
 					},
 				},
 			},
