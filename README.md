@@ -105,7 +105,7 @@ Limitations:
 
 ### Nonreplicated and io-m3 disks
 
-For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB. The driver rounds the requested size up (a 10Gi PVC gets a 93 GiB disk and is Bound with 93Gi; resizing to 100Gi gives 186 GiB). If the rounded size exceeds the PVC limit or the disk type maximum, the request fails with `OutOfRange`. Nonreplicated disks cannot have snapshots (a cloud limitation).
+For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB. The driver rounds the requested size up (a 10Gi PVC gets a 93 GiB disk and is Bound with 93Gi; resizing to 100Gi gives 186 GiB). If the rounded size exceeds the PVC limit or the maximum size for the disk's block size, the request fails with `OutOfRange`. Nonreplicated disks cannot have snapshots (a cloud limitation).
 
 ### Encryption
 
@@ -128,7 +128,7 @@ The controller service account needs the `kms.keys.encrypterDecrypter` role on t
 
 ### Disk labels
 
-Every disk gets the labels `cluster_uuid`, `csi-pvc-name` and `csi-pvc-namespace` (the values are cut to 63 characters, the label value limit in Yandex.Cloud). The PVC labels are filled in by external-provisioner, the chart enables this with `--extra-create-metadata`.
+Every new disk gets the labels `cluster_uuid`, `csi-pvc-name` and `csi-pvc-namespace` (the values are cut to 63 characters, the label value limit in Yandex.Cloud). The PVC labels are filled in by external-provisioner, the chart enables this with `--extra-create-metadata`. When upgrading an existing release use `helm upgrade ... --reset-then-reuse-values` (Helm >= 3.14), otherwise `--reuse-values` keeps the old values and new chart defaults such as `--extra-create-metadata` are not applied.
 
 ### RWX
 

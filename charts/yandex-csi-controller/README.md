@@ -18,9 +18,11 @@ export serviceAccountJSON=$( base64 k8s-csi-controller-key.json | tr -d '\n')
 export NAMESPACE=kube-system
 
 
-helm upgrade yandex-csi-controller . \
---install \
+helm upgrade --install yandex-csi \
+oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version <version> \
 --namespace=${NAMESPACE} \
 --set=serviceAccountJSON=${serviceAccountJSON} \
 --set=folderID=${YANDEX_SA_FOLDER_B64}
 ```
+
+See the [main README](https://github.com/nikolaymatrosov/yandex-csi-driver#installing-driver) for details.
