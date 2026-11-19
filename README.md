@@ -195,7 +195,7 @@ yc resource-manager folder add-access-binding $FOLDER --role compute.viewer --su
 yc iam key create --service-account-id $SA_NODE --output sa-node-key.json
 
 # omit the nodeServiceAccountJSON line to use the controller key on nodes
-helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.19.0 -n kube-system \
+helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.20.0 -n kube-system \
   --set serviceAccountJSON=$(base64 < sa-key.json | tr -d '\n') \
   --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n') \
   --set folderID=$(printf %s $FOLDER | base64)
