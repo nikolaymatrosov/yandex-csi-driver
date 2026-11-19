@@ -7,6 +7,7 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	compute "github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
+	sdkop "github.com/yandex-cloud/go-sdk/v2/pkg/operation"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -84,7 +85,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	if err != nil {
 		return nil, createSnapshotErr(err)
 	}
-	if err := op.Error(); err != nil {
+	if err := sdkop.Error(op.Proto()); err != nil {
 		return nil, createSnapshotErr(err)
 	}
 	// the typed op.Metadata() panics when the operation has no metadata
