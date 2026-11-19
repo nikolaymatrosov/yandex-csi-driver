@@ -162,8 +162,9 @@ Volume statistics are exposed through the CSI-conformant endpoints. Monitoring s
 ### Logs
 
 The driver writes JSON logs to stderr, one object per line, level `info` and above. Driver messages carry `region`,
-`zone`, `instance_id` and `version`; Yandex Cloud SDK messages (authentication, request ids) go to the same stream.
-Before v0.19.0 the logs were logrus `key=value` text: update log parsers and queries when upgrading.
+`zone`, `instance_id` and `version` (the VM the pod runs on); Yandex Cloud SDK errors, such as authentication failures,
+go to the same stream. Fatal startup errors are printed as plain text. Before v0.19.0 the logs were logrus `key=value`
+text: update log parsers and queries when upgrading.
 
 ## Installing to Kubernetes
 
