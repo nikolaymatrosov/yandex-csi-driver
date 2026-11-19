@@ -115,6 +115,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	kmsKeyID := strings.TrimSpace(req.Parameters["kmsKeyID"])
 
+	placement, err := parsePlacement(req.Parameters)
+	if err != nil {
+		return nil, err
+	}
+
 	size, err := extractStorage(req.CapacityRange, maximumVolumeSize(blockSize))
 	if err != nil {
 		return nil, status.Errorf(codes.OutOfRange, "invalid capacity range: %v", err)
@@ -159,7 +164,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		vol := disks[0]
 
-		if err := checkExistingDisk(vol, size, blockSize, kmsKeyID); err != nil {
+		if err := checkExistingDisk(vol, size, blockSize, kmsKeyID, placement); err != nil {
 			return nil, err
 		}
 
@@ -192,6 +197,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		Size:        size,
 		BlockSize:   blockSize,
 		KmsKeyId:    kmsKeyID,
+
+		DiskPlacementPolicy: placement,
 	}
 
 	if src := req.GetVolumeContentSource(); src != nil {
@@ -689,6 +696,31 @@ func pickZone(req *csi.TopologyRequirement) (zone, region string, err error) {
 	return "", "", status.Error(codes.InvalidArgument, "CreateVolume AccessibilityRequirements missing a zone")
 }
 
+// parsePlacement parses the optional "diskPlacementGroupId" and
+// "diskPlacementGroupPartition" StorageClass parameters. It returns nil when no
+// group is requested. The partition is a 1-based index: 0 means "not set" in the
+// API, so it is rejected. Whether the group is a partition group and the index
+// fits is left to the cloud.
+func parsePlacement(params map[string]string) (*compute.DiskPlacementPolicy, error) {
+	groupID := strings.TrimSpace(params["diskPlacementGroupId"])
+	rawPartition := strings.TrimSpace(params["diskPlacementGroupPartition"])
+	if groupID == "" && rawPartition == "" {
+		return nil, nil
+	}
+	if groupID == "" {
+		return nil, status.Error(codes.InvalidArgument, "CreateVolume parameter \"diskPlacementGroupPartition\" requires \"diskPlacementGroupId\"")
+	}
+	policy := &compute.DiskPlacementPolicy{PlacementGroupId: groupID}
+	if rawPartition != "" {
+		partition, err := strconv.ParseInt(rawPartition, 10, 64)
+		if err != nil || partition < 1 {
+			return nil, status.Errorf(codes.InvalidArgument, "CreateVolume invalid volume parameter \"diskPlacementGroupPartition\": %q is not a positive integer", rawPartition)
+		}
+		policy.PlacementGroupPartition = partition
+	}
+	return policy, nil
+}
+
 // parseBlockSize parses the optional "blockSize" storage class parameter. The
 // value is either a plain number of bytes ("8192") or a number with a binary
 // kilobyte suffix ("8K", "8Ki", "8KiB").
@@ -832,7 +864,7 @@ func validateCapabilities(caps []*csi.VolumeCapability) []string {
 // in any status), then the status: only a READY disk is returned as created.
 // Aborted tells external-provisioner the operation is still in progress, so it
 // keeps retrying instead of giving up.
-func checkExistingDisk(vol *compute.Disk, size, blockSize int64, kmsKeyID string) error {
+func checkExistingDisk(vol *compute.Disk, size, blockSize int64, kmsKeyID string, placement *compute.DiskPlacementPolicy) error {
 	if vol.Size != size {
 		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
 	}
@@ -853,6 +885,19 @@ func checkExistingDisk(vol *compute.Disk, size, blockSize int64, kmsKeyID string
 	// comparing an empty parameter would make its CreateVolume retry fail forever.
 	if kmsKeyID != "" && vol.GetKmsKey().GetKeyId() != kmsKeyID {
 		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested kmsKeyID: %q, existing volume key: %q", kmsKeyID, vol.GetKmsKey().GetKeyId()))
+	}
+
+	// Same for the placement group: it is compared only when the StorageClass sets
+	// one, a disk may have been put into a group by hand. The partition is compared
+	// only when it is set.
+	if placement != nil {
+		have := vol.GetDiskPlacementPolicy()
+		if have.GetPlacementGroupId() != placement.PlacementGroupId {
+			return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested placement group: %q, existing volume group: %q", placement.PlacementGroupId, have.GetPlacementGroupId()))
+		}
+		if placement.PlacementGroupPartition != 0 && have.GetPlacementGroupPartition() != placement.PlacementGroupPartition {
+			return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested placement group partition: %d, existing volume partition: %d", placement.PlacementGroupPartition, have.GetPlacementGroupPartition()))
+		}
 	}
 
 	switch vol.Status {

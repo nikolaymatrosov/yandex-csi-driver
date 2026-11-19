@@ -189,3 +189,48 @@ func TestPublishPassesCloudErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateVolumePlacement(t *testing.T) {
+	cloud := newFakeCloud(testNode, testZone)
+	d := newTestDriver(t, cloud)
+	ctx := context.Background()
+	params := map[string]string{"diskPlacementGroupId": "pg1", "diskPlacementGroupPartition": "2"}
+
+	resp, err := d.CreateVolume(ctx, createReq("pvc-1", params))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := cloud.disks[resp.Volume.VolumeId].GetDiskPlacementPolicy()
+	if pol.GetPlacementGroupId() != "pg1" || pol.GetPlacementGroupPartition() != 2 {
+		t.Fatalf("disk placement policy = %v, want group pg1 partition 2", pol)
+	}
+
+	// the same request is idempotent: no second disk
+	again, err := d.CreateVolume(ctx, createReq("pvc-1", params))
+	if err != nil || again.Volume.VolumeId != resp.Volume.VolumeId || len(cloud.disks) != 1 {
+		t.Fatalf("repeat: err %v, disks %d", err, len(cloud.disks))
+	}
+
+	// another group for the same PVC name is a conflict
+	_, err = d.CreateVolume(ctx, createReq("pvc-1", map[string]string{"diskPlacementGroupId": "pg2", "diskPlacementGroupPartition": "2"}))
+	if status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("other group: code = %v (err %v), want AlreadyExists", status.Code(err), err)
+	}
+
+	for name, bad := range map[string]map[string]string{
+		"partition without group": {"diskPlacementGroupPartition": "2"},
+		"partition not a number":  {"diskPlacementGroupId": "pg1", "diskPlacementGroupPartition": "x"},
+	} {
+		if _, err := d.CreateVolume(ctx, createReq("pvc-2", bad)); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("%s: code = %v (err %v), want InvalidArgument", name, status.Code(err), err)
+		}
+	}
+	if len(cloud.disks) != 1 {
+		t.Fatalf("invalid requests must not create disks, have %d", len(cloud.disks))
+	}
+
+	// a StorageClass without a group matches a disk that is in one
+	if _, err := d.CreateVolume(ctx, createReq("pvc-1", nil)); err != nil {
+		t.Fatalf("no group requested: %v", err)
+	}
+}

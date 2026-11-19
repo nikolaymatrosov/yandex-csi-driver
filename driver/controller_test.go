@@ -108,7 +108,7 @@ func TestCheckExistingDisk(t *testing.T) {
 		{"unspecified", disk(10*giB, 4*kiB, compute.Disk_STATUS_UNSPECIFIED), 10 * giB, 4 * kiB, codes.Internal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := status.Code(checkExistingDisk(tc.vol, tc.size, tc.blockSize, "")); got != tc.code {
+			if got := status.Code(checkExistingDisk(tc.vol, tc.size, tc.blockSize, "", nil)); got != tc.code {
 				t.Fatalf("code = %v, want %v", got, tc.code)
 			}
 		})
@@ -137,7 +137,7 @@ func TestCheckExistingDiskKMS(t *testing.T) {
 		{"key mismatch wins over status", d("k2", compute.Disk_CREATING), "k1", codes.AlreadyExists},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := status.Code(checkExistingDisk(tc.vol, 10*giB, 4*kiB, tc.kms)); got != tc.code {
+			if got := status.Code(checkExistingDisk(tc.vol, 10*giB, 4*kiB, tc.kms, nil)); got != tc.code {
 				t.Fatalf("code = %v, want %v", got, tc.code)
 			}
 		})
@@ -193,6 +193,77 @@ func TestValidateCapabilities(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := validateCapabilities(tt.caps); !slices.Equal(got, tt.want) {
 				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParsePlacement(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		params        map[string]string
+		wantID        string
+		wantPartition int64
+		wantNil       bool
+		code          codes.Code
+	}{
+		{"none", map[string]string{"typeID": "network-ssd"}, "", 0, true, codes.OK},
+		{"empty values", map[string]string{"diskPlacementGroupId": " ", "diskPlacementGroupPartition": ""}, "", 0, true, codes.OK},
+		{"group only", map[string]string{"diskPlacementGroupId": "fhm1"}, "fhm1", 0, false, codes.OK},
+		{"group trimmed", map[string]string{"diskPlacementGroupId": " fhm1 "}, "fhm1", 0, false, codes.OK},
+		{"group and partition", map[string]string{"diskPlacementGroupId": "fhm1", "diskPlacementGroupPartition": "2"}, "fhm1", 2, false, codes.OK},
+		{"partition without group", map[string]string{"diskPlacementGroupPartition": "2"}, "", 0, true, codes.InvalidArgument},
+		{"partition not a number", map[string]string{"diskPlacementGroupId": "fhm1", "diskPlacementGroupPartition": "x"}, "", 0, true, codes.InvalidArgument},
+		{"partition zero", map[string]string{"diskPlacementGroupId": "fhm1", "diskPlacementGroupPartition": "0"}, "", 0, true, codes.InvalidArgument},
+		{"partition negative", map[string]string{"diskPlacementGroupId": "fhm1", "diskPlacementGroupPartition": "-1"}, "", 0, true, codes.InvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pg, err := parsePlacement(tc.params)
+			if status.Code(err) != tc.code {
+				t.Fatalf("code = %v (err %v), want %v", status.Code(err), err, tc.code)
+			}
+			if tc.code != codes.OK {
+				return
+			}
+			if (pg == nil) != tc.wantNil {
+				t.Fatalf("pg = %v, want nil=%v", pg, tc.wantNil)
+			}
+			if pg != nil && (pg.PlacementGroupId != tc.wantID || pg.PlacementGroupPartition != tc.wantPartition) {
+				t.Fatalf("pg = %v, want id %q partition %d", pg, tc.wantID, tc.wantPartition)
+			}
+		})
+	}
+}
+
+func TestCheckExistingDiskPlacement(t *testing.T) {
+	d := func(id string, partition int64) *compute.Disk {
+		vol := &compute.Disk{Size: 10 * giB, BlockSize: 4 * kiB, Status: compute.Disk_READY}
+		if id != "" {
+			vol.DiskPlacementPolicy = &compute.DiskPlacementPolicy{PlacementGroupId: id, PlacementGroupPartition: partition}
+		}
+		return vol
+	}
+	pg := func(id string, partition int64) *compute.DiskPlacementPolicy {
+		return &compute.DiskPlacementPolicy{PlacementGroupId: id, PlacementGroupPartition: partition}
+	}
+	for _, tc := range []struct {
+		name string
+		vol  *compute.Disk
+		pg   *compute.DiskPlacementPolicy
+		code codes.Code
+	}{
+		{"same group", d("g1", 0), pg("g1", 0), codes.OK},
+		{"same group and partition", d("g1", 2), pg("g1", 2), codes.OK},
+		{"group set, partition not requested", d("g1", 2), pg("g1", 0), codes.OK},
+		{"other group", d("g2", 0), pg("g1", 0), codes.AlreadyExists},
+		{"other partition", d("g1", 1), pg("g1", 2), codes.AlreadyExists},
+		{"disk without group, group requested", d("", 0), pg("g1", 0), codes.AlreadyExists},
+		{"group not requested, disk in a group", d("g1", 2), nil, codes.OK},
+		{"group not requested, disk plain", d("", 0), nil, codes.OK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := status.Code(checkExistingDisk(tc.vol, 10*giB, 4*kiB, "", tc.pg)); got != tc.code {
+				t.Fatalf("code = %v, want %v", got, tc.code)
 			}
 		})
 	}
