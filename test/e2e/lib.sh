@@ -33,10 +33,11 @@ die() { log "FATAL: $*"; exit 1; }
 
 # Name the failing command when a script stops on an error (set -e) or a step fails (down.sh).
 set -E
-trap 'log "ERR ${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND"' ERR
+trap 'log "ERR ${BASH_SOURCE[0]##*/}:$LINENO: $BASH_COMMAND${FUNCNAME:+ (via ${FUNCNAME[*]}, lines ${BASH_LINENO[*]})}"' ERR
 
 # state_set KEY VALUE: set the variable here and persist it for later scripts.
 state_set() {
+  case $2 in '' | null) die "state_set $1: empty value" ;; esac
   touch "$STATE"
   grep -v "^$1=" "$STATE" > "$STATE.tmp" || true
   printf '%s=%q\n' "$1" "$2" >> "$STATE.tmp"
@@ -104,7 +105,7 @@ fs_kib() { k exec "$1" -- df -kP /data | awk 'NR==2 {print $2}'; }
 ctrl_log() { k -n kube-system logs deploy/yandex-csi-controller -c csi-controller; }
 ctrl_restarts() {
   k -n kube-system get pods -l app=yandex-csi-controller -o json |
-    jq '[.items[].status.containerStatuses[] | select(.name=="csi-controller") | .restartCount] | add // 0'
+    jq '[.items[] | (.status.containerStatuses // [])[] | select(.name=="csi-controller") | .restartCount] | add // 0'
 }
 
 # pvc_pod NAME STORAGECLASS SIZE NODE [SNAPSHOT]: PVC (optionally from a VolumeSnapshot) and a busybox pod on NODE.

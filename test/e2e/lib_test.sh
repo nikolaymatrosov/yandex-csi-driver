@@ -17,6 +17,7 @@ expect "state_set keeps one line per key" "$(grep -c '^FOO=' "$STATE")" 1
 FOO=
 state_load
 expect "state roundtrip" "$FOO" 'c d|e'
+if (state_set EMPTY '' 2>/dev/null); then expect "state_set rejects empty" 0 1; else expect "state_set rejects empty" 1 1; fi
 
 : > "$RESULTS"
 {
