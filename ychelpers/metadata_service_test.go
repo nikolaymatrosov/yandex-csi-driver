@@ -9,9 +9,9 @@ func TestZoneRegion(t *testing.T) {
 		{"ru-central1-d", "ru-central1-d", "ru-central1"},
 	} {
 		t.Run(tc.raw, func(t *testing.T) {
-			zone, region := zoneRegion(tc.raw)
+			zone, region := ZoneRegion(tc.raw)
 			if zone != tc.zone || region != tc.region {
-				t.Fatalf("zoneRegion(%q) = (%q, %q), want (%q, %q)", tc.raw, zone, region, tc.zone, tc.region)
+				t.Fatalf("ZoneRegion(%q) = (%q, %q), want (%q, %q)", tc.raw, zone, region, tc.zone, tc.region)
 			}
 		})
 	}

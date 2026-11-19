@@ -53,7 +53,7 @@ func GetInstanceIdentity() (YandexInstanceIdentity, error) {
 	if err != nil {
 		return YandexInstanceIdentity{}, err
 	}
-	zone, region := zoneRegion(rawZone)
+	zone, region := ZoneRegion(rawZone)
 
 	return YandexInstanceIdentity{InstanceID: id, AvailabilityZone: zone, Region: region}, nil
 }
@@ -86,8 +86,8 @@ func metadataGet(client *http.Client, path string) (string, error) {
 	return strings.TrimSpace(string(body)), nil
 }
 
-// zoneRegion accepts both "ru-central1-a" and "projects/<id>/zones/ru-central1-a".
-func zoneRegion(raw string) (zone, region string) {
+// ZoneRegion accepts both "ru-central1-a" and "projects/<id>/zones/ru-central1-a".
+func ZoneRegion(raw string) (zone, region string) {
 	zone = raw[strings.LastIndex(raw, "/")+1:]
 	if i := strings.LastIndex(zone, "-"); i >= 0 {
 		region = zone[:i]

@@ -121,24 +121,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Errorf(codes.OutOfRange, "invalid capacity range: %v", err)
 	}
 
-	zone := ""
-	region := ""
-	if req.AccessibilityRequirements != nil {
-		for _, t := range req.AccessibilityRequirements.Requisite {
-			regionStr, ok := t.Segments[regionTopologyKey]
-			if ok {
-				region = regionStr
-			} else {
-				return nil, status.Error(codes.InvalidArgument, "CreateVolume AccessibilityRequirements missing a region")
-			}
-
-			zoneStr, ok := t.Segments[zoneTopologyKey]
-			if ok {
-				zone = zoneStr
-			} else {
-				return nil, status.Error(codes.InvalidArgument, "CreateVolume AccessibilityRequirements missing a zone")
-			}
-		}
+	zone, region, err := pickZone(req.AccessibilityRequirements)
+	if err != nil {
+		return nil, err
 	}
 
 	volumeName := req.Name
@@ -187,6 +172,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested block size: %d, existing volume block size: %d", blockSize, existingBlockSize))
 		}
 
+		diskZone, diskRegion := ychelpers.ZoneRegion(vol.ZoneId)
 		log.Info("volume already created")
 		return &csi.CreateVolumeResponse{
 			Volume: &csi.Volume{
@@ -196,8 +182,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 				AccessibleTopology: []*csi.Topology{
 					{
 						Segments: map[string]string{
-							regionTopologyKey: region,
-							zoneTopologyKey:   vol.ZoneId,
+							regionTopologyKey: diskRegion,
+							zoneTopologyKey:   diskZone,
 						},
 					},
 				},
@@ -635,6 +621,24 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 // for the given block size.
 func maximumVolumeSize(blockSize int64) int64 {
 	return blockSize * maximumVolumeSizePerBlockSizeByte
+}
+
+// pickZone returns the zone (and the region derived from it) for a new disk:
+// the first Preferred segment with a zone, otherwise the first such Requisite
+// segment. No requirements at all means no zone is passed to the cloud.
+func pickZone(req *csi.TopologyRequirement) (zone, region string, err error) {
+	if len(req.GetPreferred()) == 0 && len(req.GetRequisite()) == 0 {
+		return "", "", nil
+	}
+	for _, list := range [][]*csi.Topology{req.GetPreferred(), req.GetRequisite()} {
+		for _, t := range list {
+			if z := t.GetSegments()[zoneTopologyKey]; z != "" {
+				zone, region = ychelpers.ZoneRegion(z)
+				return zone, region, nil
+			}
+		}
+	}
+	return "", "", status.Error(codes.InvalidArgument, "CreateVolume AccessibilityRequirements missing a zone")
 }
 
 // parseBlockSize parses the optional "blockSize" storage class parameter. The
