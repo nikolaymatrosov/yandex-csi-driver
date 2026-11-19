@@ -2,6 +2,7 @@ package driver
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -167,6 +168,31 @@ func TestDiskLabels(t *testing.T) {
 			got := diskLabels("uid", tc.params)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("diskLabels = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateCapabilities(t *testing.T) {
+	mount := &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}}
+	rwo := &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER}
+	rox := &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY}
+	tests := []struct {
+		name string
+		caps []*csi.VolumeCapability
+		want []string
+	}{
+		{"supported", []*csi.VolumeCapability{{AccessMode: rwo, AccessType: mount}}, nil},
+		{"duplicates collapse and are sorted", []*csi.VolumeCapability{
+			{AccessMode: rox},
+			{AccessMode: rox, AccessType: mount},
+			{AccessMode: rwo},
+		}, []string{"unsupported access mode MULTI_NODE_READER_ONLY", "unsupported access type"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validateCapabilities(tt.caps); !slices.Equal(got, tt.want) {
+				t.Fatalf("got %q, want %q", got, tt.want)
 			}
 		})
 	}

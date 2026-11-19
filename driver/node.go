@@ -32,7 +32,6 @@ import (
 	"k8s.io/klog"
 	mountutil "k8s.io/mount-utils"
 	"k8s.io/utils/exec"
-	"k8s.io/utils/mount"
 )
 
 const (
@@ -587,8 +586,8 @@ func (d *Driver) NodeExpandVolume(_ context.Context, req *csi.NodeExpandVolumeRe
 		}
 	}
 
-	mounter := mount.New("")
-	devicePath, _, err := mount.GetDeviceNameFromMount(mounter, volumePath)
+	mounter := mountutil.New("")
+	devicePath, _, err := mountutil.GetDeviceNameFromMount(mounter, volumePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to get device path for %q: %v", volumePath, err)
 	}

@@ -20,10 +20,12 @@ package driver
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
-	"google.golang.org/genproto/protobuf/field_mask"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/operation"
 
@@ -35,8 +37,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -600,7 +600,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	_, _, err = ychelpers.WaitForResult(ctx, d.sdk, func() (o *operation.Operation, err error) {
 		return d.sdk.Compute().Disk().Update(ctx, &compute.UpdateDiskRequest{
 			DiskId: req.VolumeId,
-			UpdateMask: &field_mask.FieldMask{
+			UpdateMask: &fieldmaskpb.FieldMask{
 				Paths: []string{"size"},
 			},
 			Size: resizeBytes,
@@ -780,13 +780,13 @@ func formatBytes(inputBytes int64) string {
 	return result + unit
 }
 
-// validateCapabilities validates the requested capabilities. It returns a list
-// of violations which may be empty if no violatons were found.
+// validateCapabilities validates the requested capabilities. It returns a sorted
+// list of violations which may be empty if no violations were found.
 func validateCapabilities(caps []*csi.VolumeCapability) []string {
-	violations := sets.NewString()
+	violations := map[string]struct{}{}
 	for _, capability := range caps {
 		if capability.GetAccessMode().GetMode() != supportedAccessMode.GetMode() {
-			violations.Insert(fmt.Sprintf("unsupported access mode %s", capability.GetAccessMode().GetMode().String()))
+			violations[fmt.Sprintf("unsupported access mode %s", capability.GetAccessMode().GetMode().String())] = struct{}{}
 		}
 
 		accessType := capability.GetAccessType()
@@ -794,11 +794,11 @@ func validateCapabilities(caps []*csi.VolumeCapability) []string {
 		case *csi.VolumeCapability_Block:
 		case *csi.VolumeCapability_Mount:
 		default:
-			violations.Insert("unsupported access type")
+			violations["unsupported access type"] = struct{}{}
 		}
 	}
 
-	return violations.List()
+	return slices.Sorted(maps.Keys(violations))
 }
 
 // checkExistingDisk decides whether an already existing disk satisfies a

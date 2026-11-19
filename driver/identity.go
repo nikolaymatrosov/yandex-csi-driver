@@ -21,8 +21,8 @@ import (
 	"context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // GetPluginInfo returns metadata of the plugin
@@ -81,8 +81,6 @@ func (d *Driver) Probe(_ context.Context, _ *csi.ProbeRequest) (*csi.ProbeRespon
 	defer d.readyMu.Unlock()
 
 	return &csi.ProbeResponse{
-		Ready: &wrappers.BoolValue{
-			Value: d.ready,
-		},
+		Ready: wrapperspb.Bool(d.ready),
 	}, nil
 }
