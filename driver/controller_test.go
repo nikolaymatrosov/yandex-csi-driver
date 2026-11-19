@@ -56,3 +56,28 @@ func TestPickZone(t *testing.T) {
 		})
 	}
 }
+
+func TestRoundSize(t *testing.T) {
+	for _, tc := range []struct {
+		name, typeID string
+		in, want     int64
+	}{
+		{"ordinary type unchanged", "network-ssd", 10 * giB, 10 * giB},
+		{"ordinary type odd size unchanged", "network-hdd", 1, 1},
+		{"nrd 1 byte", "network-ssd-nonreplicated", 1, 93 * giB},
+		{"nrd 10GiB", "network-ssd-nonreplicated", 10 * giB, 93 * giB},
+		{"nrd exactly 93GiB", "network-ssd-nonreplicated", 93 * giB, 93 * giB},
+		{"nrd 93GiB+1", "network-ssd-nonreplicated", 93*giB + 1, 186 * giB},
+		{"nrd 100GiB", "network-ssd-nonreplicated", 100 * giB, 186 * giB},
+		{"io-m3 10GiB", "network-ssd-io-m3", 10 * giB, 93 * giB},
+		{"io-m3 exactly 93GiB", "network-ssd-io-m3", 93 * giB, 93 * giB},
+		{"io-m3 93GiB+1", "network-ssd-io-m3", 93*giB + 1, 186 * giB},
+		{"io-m3 100GiB", "network-ssd-io-m3", 100 * giB, 186 * giB},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := roundSize(tc.typeID, tc.in); got != tc.want {
+				t.Fatalf("roundSize(%q, %d) = %d, want %d", tc.typeID, tc.in, got, tc.want)
+			}
+		})
+	}
+}

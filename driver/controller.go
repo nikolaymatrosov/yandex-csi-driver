@@ -121,6 +121,14 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Errorf(codes.OutOfRange, "invalid capacity range: %v", err)
 	}
 
+	size = roundSize(typeID, size)
+	if limit := req.GetCapacityRange().GetLimitBytes(); limit > 0 && size > limit {
+		return nil, status.Errorf(codes.OutOfRange, "size %d rounded up for disk type %q exceeds limit %d", size, typeID, limit)
+	}
+	if maxSize := maximumVolumeSize(blockSize); size > maxSize {
+		return nil, status.Errorf(codes.OutOfRange, "size %d rounded up for disk type %q exceeds maximum %d", size, typeID, maxSize)
+	}
+
 	zone, region, err := pickZone(req.AccessibilityRequirements)
 	if err != nil {
 		return nil, err
@@ -572,6 +580,14 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		return nil, status.Errorf(codes.OutOfRange, "ControllerExpandVolume invalid capacity range: %v", err)
 	}
 
+	resizeBytes = roundSize(disk.TypeId, resizeBytes)
+	if limit := req.GetCapacityRange().GetLimitBytes(); limit > 0 && resizeBytes > limit {
+		return nil, status.Errorf(codes.OutOfRange, "ControllerExpandVolume size %d rounded up for disk type %q exceeds limit %d", resizeBytes, disk.TypeId, limit)
+	}
+	if maxSize := maximumVolumeSize(blockSize); resizeBytes > maxSize {
+		return nil, status.Errorf(codes.OutOfRange, "ControllerExpandVolume size %d rounded up for disk type %q exceeds maximum %d", resizeBytes, disk.TypeId, maxSize)
+	}
+
 	log := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
 		"method":    "controller_expand_volume",
@@ -621,6 +637,20 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 // for the given block size.
 func maximumVolumeSize(blockSize int64) int64 {
 	return blockSize * maximumVolumeSizePerBlockSizeByte
+}
+
+// sizeStepNRD is the size granularity of network-ssd-nonreplicated and
+// network-ssd-io-m3 disks.
+const sizeStepNRD int64 = 93 * giB
+
+// roundSize rounds size up to a multiple of 93 GiB for the disk types that
+// require it and returns it as is for all other types.
+func roundSize(typeID string, size int64) int64 {
+	switch typeID {
+	case "network-ssd-nonreplicated", "network-ssd-io-m3":
+		return (size + sizeStepNRD - 1) / sizeStepNRD * sizeStepNRD
+	}
+	return size
 }
 
 // pickZone returns the zone (and the region derived from it) for a new disk:
