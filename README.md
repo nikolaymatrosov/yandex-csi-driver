@@ -119,7 +119,7 @@ metadata:
 provisioner: yandex.csi.flant.com
 parameters:
   typeID: network-ssd-nonreplicated
-  diskPlacementGroupId: fhm0123456789abcdefg
+  diskPlacementGroupId: <placement-group-id>
   diskPlacementGroupPartition: "2"
 allowVolumeExpansion: true
 volumeBindingMode: WaitForFirstConsumer
@@ -133,7 +133,7 @@ allowedTopologies:
 * A disk and its group must be in the same zone: set `allowedTopologies` to the zone of the group, otherwise the cloud refuses to create the disk and the PVC stays Pending with the cloud error in a `ProvisioningFailed` event.
 * A `PARTITION` group needs `diskPlacementGroupPartition`: the cloud does not pick a partition itself and answers `InvalidArgument` (`partition index must be between 1 and N`). `diskPlacementGroupPartition` without `diskPlacementGroupId`, or a value that is not a positive integer, is rejected by the driver with `InvalidArgument`.
 * The driver does not check the disk type: according to the documentation only `network-ssd-nonreplicated` disks can be in a group, the rest is up to the cloud.
-* Cloud limits: 5 placement groups per cloud (`compute.diskPlacementGroups.count`), up to 8 non-replicated disks per group, up to 5 partitions, a disk belongs to one group.
+* Cloud limits: 5 placement groups per cloud (`compute.diskPlacementGroups.count`), up to 8 non-replicated disks per group, up to 5 partitions per group, a disk belongs to one group.
 * A repeated `CreateVolume` for an existing disk compares the group (and the partition, if set) with the StorageClass and answers `AlreadyExists` on a mismatch; a StorageClass without a group does not check it.
 
 ### Encryption

@@ -504,7 +504,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	if err != nil {
 		// the CSI spec asks for Aborted when starting_token is not one this driver returned
 		if req.StartingToken != "" && status.Code(err) == codes.InvalidArgument {
-			return nil, status.Error(codes.Aborted, err.Error())
+			return nil, status.Error(codes.Aborted, status.Convert(err).Message())
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -650,9 +650,9 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 func cloudErr(err error) error {
 	switch c := status.Code(err); c {
 	case codes.InvalidArgument, codes.FailedPrecondition, codes.NotFound:
-		return status.Error(c, err.Error())
+		return status.Error(c, status.Convert(err).Message())
 	}
-	return status.Error(codes.Internal, err.Error())
+	return status.Error(codes.Internal, status.Convert(err).Message())
 }
 
 // maximumVolumeSize returns the maximum volume size supported by Yandex.Cloud

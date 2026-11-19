@@ -77,6 +77,12 @@ for want in InvalidArgument 'partition index'; do
     fail 03 "partition-группа без раздела: событие содержит «${want}»" "есть" "$(ev csi-pg-nopart ProvisioningFailed)"
   fi
 done
+# the driver passes the cloud code through: it must not be wrapped into Internal
+if failed_with csi-pg-nopart 'code = Internal'; then
+  fail 03 "partition-группа без раздела: событие не содержит «code = Internal»" "нет" "есть: $(ev csi-pg-nopart ProvisioningFailed)"
+else
+  pass 03 "partition-группа без раздела: событие не содержит «code = Internal»" "нет" "нет"
+fi
 info 03 "partition-группа без раздела: текст события" "$(ev csi-pg-nopart ProvisioningFailed)"
 check 03 "partition-группа без раздела: фаза PVC" Pending "$(k get pvc csi-pg-nopart -o jsonpath='{.status.phase}')"
 check 03 "partition-группа без раздела: дисков с именем PVC" 0 "$(disks_named csi-pg-nopart)"

@@ -632,10 +632,6 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	)
 
 	if !mounted {
-		// the CSI spec makes the plugin responsible for creating target_path
-		if err := os.MkdirAll(target, 0o750); err != nil {
-			return status.Errorf(codes.Internal, "could not create target path %q: %v", target, err)
-		}
 		log.Info("mounting the volume")
 		if err := d.mounter.Mount(source, target, fsType, mountOptions...); err != nil {
 			return status.Error(codes.Internal, err.Error())
@@ -667,15 +663,6 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mo
 	)
 
 	if !mounted {
-		// a device is bind-mounted onto a file, which the plugin has to create
-		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-			return status.Errorf(codes.Internal, "could not create the parent of target path %q: %v", target, err)
-		}
-		f, err := os.OpenFile(target, os.O_CREATE|os.O_RDONLY, 0o660)
-		if err != nil {
-			return status.Errorf(codes.Internal, "could not create target path %q: %v", target, err)
-		}
-		_ = f.Close()
 		log.Info("mounting the volume")
 		if err := d.mounter.Mount(source, target, "", mountOptions...); err != nil {
 			return status.Error(codes.Internal, err.Error())

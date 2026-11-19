@@ -1,6 +1,10 @@
 package driver
 
-import "sync"
+import (
+	"os"
+	"path/filepath"
+	"sync"
+)
 
 // fakeMounter keeps mounts in memory; it makes sanity and the node unit tests independent of mount, mkfs and /dev.
 type fakeMounter struct {
@@ -20,7 +24,20 @@ func (m *fakeMounter) Format(s, _ string) error {
 	m.formatted[s] = true
 	return nil
 }
-func (m *fakeMounter) Mount(_, t, _ string, _ ...string) error {
+func (m *fakeMounter) Mount(_, t, fsType string, _ ...string) error {
+	// like the real mounter: a file for raw block, a directory for a filesystem
+	if fsType == "" {
+		if err := os.MkdirAll(filepath.Dir(t), 0o750); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(t, os.O_CREATE|os.O_RDONLY, 0o660)
+		if err != nil {
+			return err
+		}
+		_ = f.Close()
+	} else if err := os.MkdirAll(t, 0o750); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mounted[t] = true

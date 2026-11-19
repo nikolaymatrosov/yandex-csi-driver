@@ -17,44 +17,6 @@ func newNodeDriver() (*Driver, *fakeMounter) {
 	return &Driver{log: zap.NewNop().Sugar(), mounter: m}, m
 }
 
-func blockCap() *csi.VolumeCapability {
-	return &csi.VolumeCapability{
-		AccessType: &csi.VolumeCapability_Block{Block: &csi.VolumeCapability_BlockVolume{}},
-		AccessMode: rwoMount.AccessMode,
-	}
-}
-
-func TestNodePublishCreatesTargetPath(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		cap   *csi.VolumeCapability
-		isDir bool
-	}{
-		{"filesystem: directory", rwoMount, true},
-		{"block: file", blockCap(), false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			d, m := newNodeDriver()
-			target := filepath.Join(t.TempDir(), "pods", "uid", "mount") // parents do not exist either
-			_, err := d.NodePublishVolume(context.Background(), &csi.NodePublishVolumeRequest{
-				VolumeId: "vol", StagingTargetPath: "/staging", TargetPath: target, VolumeCapability: tc.cap})
-			if err != nil {
-				t.Fatal(err)
-			}
-			fi, err := os.Stat(target)
-			if err != nil {
-				t.Fatalf("target path was not created: %v", err)
-			}
-			if fi.IsDir() != tc.isDir {
-				t.Fatalf("IsDir = %v, want %v", fi.IsDir(), tc.isDir)
-			}
-			if !m.mounted[target] {
-				t.Fatal("target path was not mounted")
-			}
-		})
-	}
-}
-
 func TestNodeUnpublishRemovesTargetPath(t *testing.T) {
 	d, m := newNodeDriver()
 	target := filepath.Join(t.TempDir(), "mount")

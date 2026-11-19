@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -140,6 +141,9 @@ func TestCloudErrorCodes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := status.Code(cloudErr(tc.in)); got != tc.want {
 				t.Fatalf("cloudErr(%v) code = %v, want %v", tc.in, got, tc.want)
+			}
+			if msg := cloudErr(tc.in).Error(); strings.Count(msg, "rpc error:") != 1 {
+				t.Fatalf("cloudErr(%v) = %q, the status text is wrapped twice", tc.in, msg)
 			}
 		})
 	}
