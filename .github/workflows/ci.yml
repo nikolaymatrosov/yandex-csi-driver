@@ -74,3 +74,25 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+  chart:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Package chart
+        run: |
+          V=$(cat VERSION); V=${V#v}
+          helm package charts/yandex-csi-controller --version "$V" --app-version "$V" -d /tmp/chart
+      - name: Push chart to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=$(cat VERSION); V=${V#v}
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          helm push "/tmp/chart/yandex-csi-controller-$V.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
