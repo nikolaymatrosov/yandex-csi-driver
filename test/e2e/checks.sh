@@ -14,6 +14,7 @@ if [ -z "$nums" ]; then
   done
 fi
 
+[ ! -f "$RESULTS" ] || mv "$RESULTS" "$RESULTS.$(date +%Y%m%d-%H%M%S)"
 {
   printf '# e2e %s: %s, %s\n\n' "$P" "$E2E_VERSION" "$(date '+%Y-%m-%d %H:%M')"
   printf '| id | проверка | ожидание | факт | статус |\n|---|---|---|---|---|\n'

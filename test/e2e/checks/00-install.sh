@@ -7,7 +7,7 @@ state_load
 
 containers_ready() { # app label -> "ready/total" containers over all its pods
   k -n kube-system get pods -l "app=$1" -o json |
-    jq -r '[.items[].status.containerStatuses[]] | "\(map(select(.ready)) | length)/\(length)"'
+    jq -r '[.items[] | (.status.containerStatuses // [])[]] | "\(map(select(.ready)) | length)/\(length)"'
 }
 check 00 "controller: контейнеры Ready" "5/5" "$(containers_ready yandex-csi-controller)"
 check 00 "node: контейнеры Ready на 3 нодах" "6/6" "$(containers_ready yandex-csi-node)"
@@ -21,5 +21,5 @@ arg() { # container flag -> value of --flag=value
 }
 check 00 "--cluster-uuid = UID kube-system" "$KS_UID" "$(arg csi-controller cluster-uuid)"
 check 00 "provisioner --extra-create-metadata" true "$(arg csi-provisioner extra-create-metadata)"
-check 00 "GetCapacity в логе csi-provisioner" 0 \
-  "$(k -n kube-system logs deploy/yandex-csi-controller -c csi-provisioner | grep -c GetCapacity || true)"
+plog=$(k -n kube-system logs deploy/yandex-csi-controller -c csi-provisioner)
+check 00 "GetCapacity в логе csi-provisioner" 0 "$(grep -c GetCapacity <<<"$plog" || true)"

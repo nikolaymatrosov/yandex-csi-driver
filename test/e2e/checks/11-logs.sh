@@ -5,12 +5,12 @@ set -euo pipefail
 . "$(dirname "$0")/../lib.sh"
 state_load
 
-logs=$({
-  ctrl_log
-  for p in $(k -n kube-system get pods -l app=yandex-csi-node -o name); do
-    k -n kube-system logs "$p" -c yandex-csi-node
-  done
-})
+logs=$(ctrl_log)
+node_pods=$(k -n kube-system get pods -l app=yandex-csi-node -o name)
+check 11 "node-поды для логов" 3 "$(wc -w <<<"$node_pods" | tr -d ' ')"
+for p in $node_pods; do
+  logs="$logs"$'\n'"$(k -n kube-system logs "$p" -c yandex-csi-node)"
+done
 lines() { printf '%s\n' "$logs"; }
 
 total=$(lines | grep -c . || true)
@@ -36,7 +36,7 @@ done
 pods=$(k -n kube-system get pods -l 'app in (yandex-csi-controller,yandex-csi-node)' -o json)
 drv='.name == "csi-controller" or .name == "yandex-csi-node"'
 check 11 "рестарты контейнеров драйвера" 0 \
-  "$(jq "[.items[].status.containerStatuses[] | select($drv) | .restartCount] | add // 0" <<<"$pods")"
-side=$(jq "[.items[].status.containerStatuses[] | select(($drv) | not) | .restartCount] | max // 0" <<<"$pods")
+  "$(jq "[.items[] | (.status.containerStatuses // [])[] | select($drv) | .restartCount] | add // 0" <<<"$pods")"
+side=$(jq "[.items[] | (.status.containerStatuses // [])[] | select(($drv) | not) | .restartCount] | max // 0" <<<"$pods")
 if [ "$side" -le 1 ]; then pass 11 "рестарты сайдкаров" "≤ 1" "$side"; else fail 11 "рестарты сайдкаров" "≤ 1" "$side"; fi
 info 11 "строк level=error" "$(lines | grep -c '"level":"error"' || true)"

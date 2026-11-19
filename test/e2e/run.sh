@@ -13,6 +13,11 @@ finish() {
   fi
   exit "$rc"
 }
+state="$dir/_work/${E2E_PREFIX:-e2e}/state.env"
+if [ -f "$state" ]; then
+  echo "$state exists: a cluster from an earlier run is up; reuse it with checks.sh or delete it with down.sh" >&2
+  exit 1
+fi
 trap finish EXIT
 trap 'exit 130' INT TERM
 

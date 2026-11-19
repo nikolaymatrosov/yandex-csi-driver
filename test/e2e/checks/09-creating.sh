@@ -12,16 +12,22 @@ creating() {
 }
 bound() { [ "$(kubectl get pvc csi-st -o jsonpath='{.status.phase}')" = Bound ]; }
 
+mkdir -p "$WORK/logs"
+k -n kube-system logs deploy/yandex-csi-controller --all-containers > "$WORK/logs/controller-before-09.log" || true
+
 pvc_pod csi-st yc-network-ssd 4Gi "$NA1" csi-snap-a
 caught=0
 if wait_until 120 creating; then
-  k -n kube-system delete pod -l app=yandex-csi-controller --wait=false
+  k -n kube-system delete pod -l app=yandex-csi-controller
   caught=1
 fi
 k -n kube-system rollout status deploy/yandex-csi-controller --timeout=5m
-if ! wait_until 300 bound; then
+ok=1
+wait_until 300 bound || ok=0
+clog=$(ctrl_log)
+if [ "$ok" = 0 ]; then
   fail 09 "PVC Bound после рестарта контроллера" Bound "$(k get pvc csi-st -o jsonpath='{.status.phase}')"
-elif [ "$caught" = 1 ] && [ "$(ctrl_log | grep -c 'is in status CREATING' || true)" -gt 0 ]; then
+elif [ "$caught" = 1 ] && [ "$(grep -c 'is in status CREATING' <<<"$clog" || true)" -gt 0 ]; then
   pass 09 "Aborted на CREATING, затем Bound" "is in status CREATING" "поймали, PVC Bound"
 else
   skip 09 "Aborted на CREATING" "гонку не поймали (диск стал READY раньше), PVC Bound"

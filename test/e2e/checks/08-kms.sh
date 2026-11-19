@@ -7,6 +7,7 @@ state_load
 
 KEY=$(yc kms symmetric-key create --name "$P-csi" --default-algorithm aes-256 --format json | jq -r .id)
 yc kms symmetric-key add-access-binding "$KEY" --role kms.keys.encrypterDecrypter --subject "serviceAccount:$SA" >/dev/null
+sleep 30 # the key binding takes a few seconds to propagate
 apply <<YAML
 apiVersion: storage.k8s.io/v1
 kind: StorageClass

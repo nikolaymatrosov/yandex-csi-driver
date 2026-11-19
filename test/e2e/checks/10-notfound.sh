@@ -21,7 +21,8 @@ if wait_until 180 pv_gone; then
 else
   fail 10 "PV удалён, хотя диска уже нет" "PV нет за 3 мин" "$(k get pv "$PV" -o jsonpath='{.status.phase}')"
 fi
-check_ge 10 "лог: assuming volume is deleted" 1 "$(ctrl_log | grep -c 'assuming volume is deleted' || true)"
+clog=$(ctrl_log)
+check_ge 10 "лог: assuming volume is deleted" 1 "$(grep -c 'assuming volume is deleted' <<<"$clog" || true)"
 
 # snapshot: delete it in the cloud, then delete the VolumeSnapshot
 vsnap csi-nf-snap csi-test
@@ -35,4 +36,5 @@ if wait_until 180 vsc_gone; then
 else
   fail 10 "VolumeSnapshotContent удалён, хотя снапшота уже нет" "нет за 3 мин" "$VSC есть"
 fi
-check_ge 10 "лог: snapshot is already deleted" 1 "$(ctrl_log | grep -c 'snapshot is already deleted' || true)"
+clog=$(ctrl_log)
+check_ge 10 "лог: snapshot is already deleted" 1 "$(grep -c 'snapshot is already deleted' <<<"$clog" || true)"
