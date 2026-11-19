@@ -159,6 +159,12 @@ The node reports how many CSI volumes it can attach (`CSINode` `allocatable.coun
 
 Volume statistics are exposed through the CSI-conformant endpoints. Monitoring systems such as Prometheus can scrape metrics and provide insights into volume usage.
 
+### Logs
+
+The driver writes JSON logs to stderr, one object per line, level `info` and above. Driver messages carry `region`,
+`zone`, `instance_id` and `version`; Yandex Cloud SDK messages (authentication, request ids) go to the same stream.
+Before v0.19.0 the logs were logrus `key=value` text: update log parsers and queries when upgrading.
+
 ## Installing to Kubernetes
 
 ### Kubernetes Compatibility
@@ -188,7 +194,7 @@ yc resource-manager folder add-access-binding $FOLDER --role compute.viewer --su
 yc iam key create --service-account-id $SA_NODE --output sa-node-key.json
 
 # omit the nodeServiceAccountJSON line to use the controller key on nodes
-helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.18.0 -n kube-system \
+helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version 0.19.0 -n kube-system \
   --set serviceAccountJSON=$(base64 < sa-key.json | tr -d '\n') \
   --set nodeServiceAccountJSON=$(base64 < sa-node-key.json | tr -d '\n') \
   --set folderID=$(printf %s $FOLDER | base64)
