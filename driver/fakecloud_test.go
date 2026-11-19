@@ -295,6 +295,9 @@ func (f fakeInstances) DetachDisk(_ context.Context, r *compute.DetachInstanceDi
 	if !ok {
 		return nil, notFound("disk")
 	}
+	if !slices.Contains(d.InstanceIds, i.Id) { // the real cloud refuses to detach a disk that is not on this VM
+		return nil, status.Errorf(codes.FailedPrecondition, "disk %s is not attached to instance %s", d.Id, i.Id)
+	}
 	d.InstanceIds = slices.DeleteFunc(d.InstanceIds, func(s string) bool { return s == i.Id })
 	i.SecondaryDisks = slices.DeleteFunc(i.SecondaryDisks, func(a *compute.AttachedDisk) bool { return a.DiskId == d.Id })
 	return done(&compute.DetachInstanceDiskMetadata{InstanceId: i.Id, DiskId: d.Id}, i)
