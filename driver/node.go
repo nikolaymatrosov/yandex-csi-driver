@@ -422,7 +422,7 @@ func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi
 		hostID, zone, region = identity.InstanceID, identity.AvailabilityZone, identity.Region
 	}
 
-	instance, err := d.sdk.Compute().Instance().Get(context.TODO(), &compute.GetInstanceRequest{
+	instance, err := d.instances.Get(context.TODO(), &compute.GetInstanceRequest{
 		InstanceId: hostID,
 		View:       0,
 	})

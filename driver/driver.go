@@ -32,8 +32,11 @@ import (
 
 	"github.com/deckhouse/yandex-csi-driver/ychelpers"
 
-	ycloud "github.com/yandex-cloud/go-sdk"
-	"github.com/yandex-cloud/go-sdk/iamkey"
+	computesdk "github.com/yandex-cloud/go-sdk/services/compute/v1"
+	ycsdk "github.com/yandex-cloud/go-sdk/v2"
+	"github.com/yandex-cloud/go-sdk/v2/credentials"
+	"github.com/yandex-cloud/go-sdk/v2/pkg/iamkey"
+	"github.com/yandex-cloud/go-sdk/v2/pkg/options"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -85,7 +88,9 @@ type Driver struct {
 	log     *logrus.Entry
 	mounter Mounter
 
-	sdk *ycloud.SDK
+	disks     computesdk.DiskClient
+	instances computesdk.InstanceClient
+	snapshots computesdk.SnapshotClient
 
 	// ready defines whether the driver is ready to function. This value will
 	// be used by the `Identity` service via the `Probe()` method.
@@ -116,12 +121,12 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		return nil, err
 	}
 
-	credentials, err := ycloud.ServiceAccountKey(&authKeys)
+	creds, err := credentials.ServiceAccountKey(&authKeys)
 	if err != nil {
 		return nil, err
 	}
 
-	sdk, err := ycloud.Build(ctx, ycloud.Config{Credentials: credentials})
+	sdk, err := ycsdk.Build(ctx, options.WithCredentials(creds))
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +174,9 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 
 		clusterUUID: clusterUUID,
 
-		sdk: sdk,
+		disks:     computesdk.NewDiskClient(sdk),
+		instances: computesdk.NewInstanceClient(sdk),
+		snapshots: computesdk.NewSnapshotClient(sdk),
 	}, nil
 }
 

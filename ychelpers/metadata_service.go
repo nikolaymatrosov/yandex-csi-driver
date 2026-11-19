@@ -24,8 +24,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	yclient "github.com/yandex-cloud/go-sdk"
 )
 
 type YandexInstanceIdentity struct {
@@ -34,8 +32,11 @@ type YandexInstanceIdentity struct {
 	Region           string
 }
 
+// instanceMetadataAddr is the address of the VM metadata service.
+const instanceMetadataAddr = "169.254.169.254"
+
 var (
-	baseMetadataUrl    = url.URL{Scheme: "http", Host: yclient.InstanceMetadataAddr}
+	baseMetadataUrl    = url.URL{Scheme: "http", Host: instanceMetadataAddr}
 	httpTimeoutSeconds = 15
 )
 

@@ -27,8 +27,6 @@ import (
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	"github.com/yandex-cloud/go-genproto/yandex/cloud/operation"
-
 	"github.com/deckhouse/yandex-csi-driver/ychelpers"
 
 	compute "github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
@@ -153,7 +151,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		FolderId: d.folderID,
 		Filter:   "name=" + strconv.Quote(volumeName),
 	}
-	listDiskResp, err := d.sdk.Compute().Disk().List(ctx, listDiskRequest)
+	listDiskResp, err := d.disks.List(ctx, listDiskRequest)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -206,7 +204,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		if snapID == "" {
 			return nil, status.Error(codes.InvalidArgument, "only snapshot content source is supported")
 		}
-		snap, err := d.sdk.Compute().Snapshot().Get(ctx, &compute.GetSnapshotRequest{SnapshotId: snapID})
+		snap, err := d.snapshots.Get(ctx, &compute.GetSnapshotRequest{SnapshotId: snapID})
 		if err != nil {
 			if status.Code(err) == codes.NotFound {
 				return nil, status.Errorf(codes.NotFound, "snapshot %q not found", snapID)
@@ -223,13 +221,14 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	}
 
 	log.WithField("volume_req", diskCreateRequest).Info("creating volume")
-	result, _, err := ychelpers.WaitForResult(ctx, d.sdk, func() (*operation.Operation, error) {
-		return d.sdk.Compute().Disk().Create(ctx, diskCreateRequest)
-	})
+	op, err := d.disks.Create(ctx, diskCreateRequest)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	newDisk := result.(*compute.Disk)
+	newDisk, err := op.Wait(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	newZone, newRegion := ychelpers.ZoneRegion(newDisk.ZoneId)
 
 	resp := &csi.CreateVolumeResponse{
@@ -264,11 +263,12 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	log.Info("delete volume called")
 
-	response, _, err := ychelpers.WaitForResult(ctx, d.sdk, func() (*operation.Operation, error) {
-		return d.sdk.Compute().Disk().Delete(ctx, &compute.DeleteDiskRequest{
-			DiskId: req.VolumeId,
-		})
+	op, err := d.disks.Delete(ctx, &compute.DeleteDiskRequest{
+		DiskId: req.VolumeId,
 	})
+	if err == nil {
+		_, err = op.Wait(ctx)
+	}
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			// we assume it's deleted already for idempotency
@@ -282,7 +282,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	log.WithField("response", response).Info("volume was deleted")
+	log.Info("volume was deleted")
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -313,7 +313,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	log.Info("controller publish volume called")
 
 	// check if volume exist before trying to attach it
-	vol, err := d.sdk.Compute().Disk().Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
+	vol, err := d.disks.Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, status.Errorf(codes.NotFound, "volume %q does not exist", req.VolumeId)
@@ -322,7 +322,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	// check if droplet exist before trying to attach the volume to the droplet
-	_, err = d.sdk.Compute().Instance().Get(ctx, &compute.GetInstanceRequest{InstanceId: req.NodeId})
+	_, err = d.instances.Get(ctx, &compute.GetInstanceRequest{InstanceId: req.NodeId})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return nil, status.Errorf(codes.NotFound, "instance %q does not exist", req.NodeId)
@@ -349,17 +349,18 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	// attach the volume to the correct node
-	_, _, err = ychelpers.WaitForResult(ctx, d.sdk, func() (*operation.Operation, error) {
-		return d.sdk.Compute().Instance().AttachDisk(ctx, &compute.AttachInstanceDiskRequest{
-			InstanceId: req.NodeId,
-			AttachedDiskSpec: &compute.AttachedDiskSpec{
-				Mode:       compute.AttachedDiskSpec_READ_WRITE,
-				DeviceName: genDiskID(req.VolumeId),
-				AutoDelete: false,
-				Disk:       &compute.AttachedDiskSpec_DiskId{DiskId: req.VolumeId},
-			},
-		})
+	op, err := d.instances.AttachDisk(ctx, &compute.AttachInstanceDiskRequest{
+		InstanceId: req.NodeId,
+		AttachedDiskSpec: &compute.AttachedDiskSpec{
+			Mode:       compute.AttachedDiskSpec_READ_WRITE,
+			DeviceName: genDiskID(req.VolumeId),
+			AutoDelete: false,
+			Disk:       &compute.AttachedDiskSpec_DiskId{DiskId: req.VolumeId},
+		},
 	})
+	if err == nil {
+		_, err = op.Wait(ctx)
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -386,7 +387,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	log.Info("controller unpublish volume called")
 
 	// check if volume exist before trying to detach it
-	disk, err := d.sdk.Compute().Disk().Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
+	disk, err := d.disks.Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			log.Info("assuming Disk is detached because it does not exist")
@@ -401,7 +402,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	}
 
 	// check if Instance exist before trying to attach the volume to the droplet
-	_, err = d.sdk.Compute().Instance().Get(ctx, &compute.GetInstanceRequest{InstanceId: req.NodeId})
+	_, err = d.instances.Get(ctx, &compute.GetInstanceRequest{InstanceId: req.NodeId})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			log.Info("assuming Disk is detached because Instance does not exist")
@@ -410,13 +411,13 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, err
 	}
 
-	_, _, err = ychelpers.WaitForResult(ctx, d.sdk, func() (*operation.Operation, error) {
-		return d.sdk.Compute().Instance().DetachDisk(ctx, &compute.DetachInstanceDiskRequest{
-			InstanceId: req.NodeId,
-			Disk:       &compute.DetachInstanceDiskRequest_DiskId{DiskId: req.VolumeId},
-		})
-	},
-	)
+	op, err := d.instances.DetachDisk(ctx, &compute.DetachInstanceDiskRequest{
+		InstanceId: req.NodeId,
+		Disk:       &compute.DetachInstanceDiskRequest_DiskId{DiskId: req.VolumeId},
+	})
+	if err == nil {
+		_, err = op.Wait(ctx)
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -483,7 +484,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	})
 	log.Info("list volumes called")
 
-	listRes, err := d.sdk.Compute().Disk().List(ctx, listOpts)
+	listRes, err := d.disks.List(ctx, listOpts)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -557,7 +558,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	if len(volID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID missing in request")
 	}
-	disk, err := d.sdk.Compute().Disk().Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
+	disk, err := d.disks.Get(ctx, &compute.GetDiskRequest{DiskId: req.VolumeId})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "ControllerExpandVolume could not retrieve existing volume: %v", err)
 	}
@@ -597,15 +598,16 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		return &csi.ControllerExpandVolumeResponse{CapacityBytes: disk.Size, NodeExpansionRequired: true}, nil
 	}
 
-	_, _, err = ychelpers.WaitForResult(ctx, d.sdk, func() (o *operation.Operation, err error) {
-		return d.sdk.Compute().Disk().Update(ctx, &compute.UpdateDiskRequest{
-			DiskId: req.VolumeId,
-			UpdateMask: &fieldmaskpb.FieldMask{
-				Paths: []string{"size"},
-			},
-			Size: resizeBytes,
-		})
+	op, err := d.disks.Update(ctx, &compute.UpdateDiskRequest{
+		DiskId: req.VolumeId,
+		UpdateMask: &fieldmaskpb.FieldMask{
+			Paths: []string{"size"},
+		},
+		Size: resizeBytes,
 	})
+	if err == nil {
+		_, err = op.Wait(ctx)
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s", req.GetVolumeId(), err.Error())
 	}
