@@ -35,7 +35,7 @@ func probeSocket(ctx context.Context, sock string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	resp, err := csi.NewIdentityClient(conn).Probe(ctx, &csi.ProbeRequest{})
 	if err != nil {

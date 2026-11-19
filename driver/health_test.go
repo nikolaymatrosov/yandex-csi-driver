@@ -20,7 +20,7 @@ func TestProbeSocket(t *testing.T) {
 	d := &Driver{log: logrus.NewEntry(logrus.New())}
 	srv := grpc.NewServer()
 	csi.RegisterIdentityServer(srv, d)
-	go srv.Serve(lis)
+	go func() { _ = srv.Serve(lis) }()
 	ctx := context.Background()
 
 	if err := probeSocket(ctx, sock); err == nil {
