@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -17,7 +17,7 @@ func TestProbeSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := &Driver{log: logrus.NewEntry(logrus.New())}
+	d := &Driver{log: zap.NewNop().Sugar()}
 	srv := grpc.NewServer()
 	csi.RegisterIdentityServer(srv, d)
 	go func() { _ = srv.Serve(lis) }()

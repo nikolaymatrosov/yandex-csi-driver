@@ -32,7 +32,6 @@ import (
 	compute "github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -136,15 +135,15 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	volumeName := req.Name
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_name":            volumeName,
-		"storage_size_gibibytes": size / giB,
-		"block_size_bytes":       blockSize,
-		"method":                 "create_volume",
-		"volume_capabilities":    req.VolumeCapabilities,
-		"region":                 region,
-		"zone":                   zone,
-	})
+	log := d.log.With(
+		"volume_name", volumeName,
+		"storage_size_gibibytes", size/giB,
+		"block_size_bytes", blockSize,
+		"method", "create_volume",
+		"volume_capabilities", req.VolumeCapabilities,
+		"region", region,
+		"zone", zone,
+	)
 	log.Info("create volume called")
 
 	listDiskRequest := &compute.ListDisksRequest{
@@ -220,7 +219,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		diskCreateRequest.Source = &compute.CreateDiskRequest_SnapshotId{SnapshotId: snapID}
 	}
 
-	log.WithField("volume_req", diskCreateRequest).Info("creating volume")
+	log.With("volume_req", diskCreateRequest).Info("creating volume")
 	op, err := d.disks.Create(ctx, diskCreateRequest)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -247,7 +246,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		},
 	}
 
-	log.WithField("response", resp).Info("volume was created")
+	log.With("response", resp).Info("volume was created")
 	return resp, nil
 }
 
@@ -257,10 +256,10 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "DeleteVolume Volume ID must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id": req.VolumeId,
-		"method":    "delete_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"method", "delete_volume",
+	)
 	log.Info("delete volume called")
 
 	op, err := d.disks.Delete(ctx, &compute.DeleteDiskRequest{
@@ -272,10 +271,9 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			// we assume it's deleted already for idempotency
-			log.WithFields(logrus.Fields{
-				"error": err,
-				"resp":  err.Error(),
-			}).Warn("assuming volume is deleted because it does not exist")
+			log.With(
+				"error", err,
+			).Warn("assuming volume is deleted because it does not exist")
 			return &csi.DeleteVolumeResponse{}, nil
 		}
 
@@ -304,12 +302,12 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.AlreadyExists, "read only Volumes are not supported")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":   req.VolumeId,
-		"device_name": genDiskID(req.VolumeId),
-		"node_id":     req.NodeId,
-		"method":      "controller_publish_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"device_name", genDiskID(req.VolumeId),
+		"node_id", req.NodeId,
+		"method", "controller_publish_volume",
+	)
 	log.Info("controller publish volume called")
 
 	// check if volume exist before trying to attach it
@@ -379,11 +377,11 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, status.Error(codes.InvalidArgument, "ControllerUnpublishVolume Volume ID must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id": req.VolumeId,
-		"node_id":   req.NodeId,
-		"method":    "controller_unpublish_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"node_id", req.NodeId,
+		"method", "controller_unpublish_volume",
+	)
 	log.Info("controller unpublish volume called")
 
 	// check if volume exist before trying to detach it
@@ -437,12 +435,12 @@ func (d *Driver) ValidateVolumeCapabilities(_ context.Context, req *csi.Validate
 		return nil, status.Error(codes.InvalidArgument, "ValidateVolumeCapabilities Volume Capabilities must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":              req.VolumeId,
-		"volume_capabilities":    req.VolumeCapabilities,
-		"supported_capabilities": supportedAccessMode,
-		"method":                 "validate_volume_capabilities",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"volume_capabilities", req.VolumeCapabilities,
+		"supported_capabilities", supportedAccessMode,
+		"method", "validate_volume_capabilities",
+	)
 	log.Info("validate volume capabilities called")
 
 	// if it's not supported (i.e: wrong region), we shouldn't override it
@@ -456,7 +454,7 @@ func (d *Driver) ValidateVolumeCapabilities(_ context.Context, req *csi.Validate
 		},
 	}
 
-	log.WithField("confirmed", resp.Confirmed).Info("supported capabilities")
+	log.With("confirmed", resp.Confirmed).Info("supported capabilities")
 	return resp, nil
 }
 
@@ -477,11 +475,11 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 		PageToken: req.StartingToken,
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"list_opts":          listOpts,
-		"req_starting_token": req.StartingToken,
-		"method":             "compu",
-	})
+	log := d.log.With(
+		"list_opts", listOpts,
+		"req_starting_token", req.StartingToken,
+		"method", "compu",
+	)
 	log.Info("list volumes called")
 
 	listRes, err := d.disks.List(ctx, listOpts)
@@ -504,16 +502,16 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 		NextToken: listRes.NextPageToken,
 	}
 
-	log.WithField("response", resp).Info("volumes listed")
+	log.With("response", resp).Info("volumes listed")
 	return resp, nil
 }
 
 // GetCapacity returns the capacity of the storage pool
 func (d *Driver) GetCapacity(_ context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
-	d.log.WithFields(logrus.Fields{
-		"params": req.Parameters,
-		"method": "get_capacity",
-	}).Warn("get capacity is not implemented")
+	d.log.With(
+		"params", req.Parameters,
+		"method", "get_capacity",
+	).Warn("get capacity is not implemented")
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
@@ -544,10 +542,10 @@ func (d *Driver) ControllerGetCapabilities(_ context.Context, _ *csi.ControllerG
 		Capabilities: caps,
 	}
 
-	d.log.WithFields(logrus.Fields{
-		"response": resp,
-		"method":   "controller_get_capabilities",
-	}).Info("controller get capabilities called")
+	d.log.With(
+		"response", resp,
+		"method", "controller_get_capabilities",
+	).Info("controller get capabilities called")
 	return resp, nil
 }
 
@@ -581,18 +579,18 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		return nil, status.Errorf(codes.OutOfRange, "ControllerExpandVolume size %d rounded up for disk type %q exceeds maximum %d", resizeBytes, disk.TypeId, maxSize)
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id": req.VolumeId,
-		"method":    "controller_expand_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"method", "controller_expand_volume",
+	)
 
 	log.Info("controller expand volume called")
 
 	if resizeBytes <= disk.Size {
-		log.WithFields(logrus.Fields{
-			"current_volume_size":   disk.Size,
-			"requested_volume_size": resizeBytes,
-		}).Info("skipping volume resize because current volume size exceeds requested volume size")
+		log.With(
+			"current_volume_size", disk.Size,
+			"requested_volume_size", resizeBytes,
+		).Info("skipping volume resize because current volume size exceeds requested volume size")
 		// even if the volume is resized independently from the control panel, we still need to resize the node fs when resize is requested
 		// in this case, the claim capacity will be resized to the volume capacity, requested capcity will be ignored to make the PV and PVC capacities consistent
 		return &csi.ControllerExpandVolumeResponse{CapacityBytes: disk.Size, NodeExpansionRequired: true}, nil
@@ -612,7 +610,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s", req.GetVolumeId(), err.Error())
 	}
 
-	log = log.WithField("new_volume_size", resizeBytes)
+	log = log.With("new_volume_size", resizeBytes)
 	log.Info("volume was resized")
 
 	nodeExpansionRequired := true

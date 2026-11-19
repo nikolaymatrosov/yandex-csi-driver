@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
 	compute "github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,11 +43,11 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot name and source volume ID must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"snapshot_name": req.Name,
-		"volume_id":     req.SourceVolumeId,
-		"method":        "create_snapshot",
-	})
+	log := d.log.With(
+		"snapshot_name", req.Name,
+		"volume_id", req.SourceVolumeId,
+		"method", "create_snapshot",
+	)
 	log.Info("create snapshot called")
 
 	list, err := d.snapshots.List(ctx, &compute.ListSnapshotsRequest{
@@ -94,7 +93,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 		return nil, status.Errorf(codes.Internal, "unexpected operation metadata %T", op.Operation.Metadata())
 	}
 
-	log.WithField("snapshot_id", meta.SnapshotId).Info("snapshot creation started")
+	log.With("snapshot_id", meta.SnapshotId).Info("snapshot creation started")
 	return &csi.CreateSnapshotResponse{Snapshot: &csi.Snapshot{
 		SnapshotId:     meta.SnapshotId,
 		SourceVolumeId: req.SourceVolumeId,
@@ -109,7 +108,7 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 		return nil, status.Error(codes.InvalidArgument, "DeleteSnapshot snapshot ID must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{"snapshot_id": req.SnapshotId, "method": "delete_snapshot"})
+	log := d.log.With("snapshot_id", req.SnapshotId, "method", "delete_snapshot")
 	log.Info("delete snapshot called")
 
 	op, err := d.snapshots.Delete(ctx, &compute.DeleteSnapshotRequest{SnapshotId: req.SnapshotId})

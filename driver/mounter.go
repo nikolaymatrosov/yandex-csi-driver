@@ -28,7 +28,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
@@ -82,11 +82,11 @@ type Mounter interface {
 }
 
 type mounter struct {
-	log *logrus.Entry
+	log *zap.SugaredLogger
 }
 
 // newMounter returns a new mounter instance
-func newMounter(log *logrus.Entry) *mounter {
+func newMounter(log *zap.SugaredLogger) *mounter {
 	return &mounter{
 		log: log,
 	}
@@ -122,10 +122,10 @@ func (m *mounter) Format(source, fsType string) error {
 		}
 	}
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  mkfsCmd,
-		"args": mkfsArgs,
-	}).Info("executing format command")
+	m.log.With(
+		"cmd", mkfsCmd,
+		"args", mkfsArgs,
+	).Info("executing format command")
 
 	out, err := exec.Command(mkfsCmd, mkfsArgs...).CombinedOutput()
 	if err != nil {
@@ -181,10 +181,10 @@ func (m *mounter) Mount(source, target, fsType string, opts ...string) error {
 	mountArgs = append(mountArgs, source)
 	mountArgs = append(mountArgs, target)
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  mountCmd,
-		"args": mountArgs,
-	}).Info("executing mount command")
+	m.log.With(
+		"cmd", mountCmd,
+		"args", mountArgs,
+	).Info("executing mount command")
 
 	out, err := exec.Command(mountCmd, mountArgs...).CombinedOutput()
 	if err != nil {
@@ -203,10 +203,10 @@ func (m *mounter) Unmount(target string) error {
 
 	umountArgs := []string{target}
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  umountCmd,
-		"args": umountArgs,
-	}).Info("executing umount command")
+	m.log.With(
+		"cmd", umountCmd,
+		"args", umountArgs,
+	).Info("executing umount command")
 
 	out, err := exec.Command(umountCmd, umountArgs...).CombinedOutput()
 	if err != nil {
@@ -233,10 +233,10 @@ func (m *mounter) IsFormatted(source string) (bool, error) {
 
 	blkidArgs := []string{source}
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  blkidCmd,
-		"args": blkidArgs,
-	}).Info("checking if source is formatted")
+	m.log.With(
+		"cmd", blkidCmd,
+		"args", blkidArgs,
+	).Info("checking if source is formatted")
 
 	exitCode := 0
 	cmd := exec.Command(blkidCmd, blkidArgs...)
@@ -274,10 +274,10 @@ func (m *mounter) IsMounted(target string) (bool, error) {
 
 	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-M", target, "-J"}
 
-	m.log.WithFields(logrus.Fields{
-		"cmd":  findmntCmd,
-		"args": findmntArgs,
-	}).Info("checking if target is mounted")
+	m.log.With(
+		"cmd", findmntCmd,
+		"args", findmntArgs,
+	).Info("checking if target is mounted")
 
 	out, err := exec.Command(findmntCmd, findmntArgs...).CombinedOutput()
 	if err != nil {

@@ -25,11 +25,10 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/deckhouse/yandex-csi-driver/ychelpers"
-	"github.com/sirupsen/logrus"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog"
 	mountutil "k8s.io/mount-utils"
 	"k8s.io/utils/exec"
 )
@@ -81,8 +80,8 @@ var (
 
 // checkAndRepairFileSystem checks and repairs filesystems using command fsck.
 // ported from original k8s mount-utils library https://github.com/kubernetes/mount-utils/blob/master/mount_linux.go#L450
-func checkAndRepairFilesystem(source string) error {
-	klog.V(4).Infof("Checking for issues with fsck on disk: %s", source)
+func checkAndRepairFilesystem(log *zap.SugaredLogger, source string) error {
+	log.Debugf("Checking for issues with fsck on disk: %s", source)
 	args := []string{"-a", source}
 	executor := exec.New()
 	out, err := executor.Command("fsck", args...).CombinedOutput()
@@ -90,15 +89,15 @@ func checkAndRepairFilesystem(source string) error {
 		ee, isExitError := err.(exec.ExitError)
 		switch {
 		case err == exec.ErrExecutableNotFound:
-			klog.Warningf("'fsck' not found on system; continuing mount without running 'fsck'.")
+			log.Warnf("'fsck' not found on system; continuing mount without running 'fsck'.")
 		case isExitError && ee.ExitStatus() == fsckErrorsCorrected:
-			klog.Infof("Device %s has errors which were corrected by fsck.", source)
+			log.Infof("Device %s has errors which were corrected by fsck.", source)
 		case isExitError && ee.ExitStatus() == fsckErrorsUncorrected:
 			return NewMountError(HasFilesystemErrors, "'fsck' found errors on device %s but could not correct them: %s", source, string(out))
 		case isExitError && ee.ExitStatus() > fsckErrorsUncorrected:
-			klog.Infof("`fsck` error %s", string(out))
+			log.Infof("`fsck` error %s", string(out))
 		default:
-			klog.Warningf("fsck on device %s failed with error %v, output: %v", source, err, string(out))
+			log.Warnf("fsck on device %s failed with error %v, output: %v", source, err, string(out))
 		}
 	}
 	return nil
@@ -121,11 +120,11 @@ func (d *Driver) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeRequ
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":           req.VolumeId,
-		"staging_target_path": req.StagingTargetPath,
-		"method":              "node_stage_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"staging_target_path", req.StagingTargetPath,
+		"method", "node_stage_volume",
+	)
 	log.Info("node stage volume called")
 
 	// If it is a block volume, we do nothing for stage volume
@@ -146,15 +145,15 @@ func (d *Driver) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeRequ
 		fsType = mnt.FsType
 	}
 
-	log = d.log.WithFields(logrus.Fields{
-		"volume_mode":     volumeModeFilesystem,
-		"volume_name":     req.VolumeId,
-		"volume_context":  req.VolumeContext,
-		"publish_context": req.PublishContext,
-		"source":          source,
-		"fs_type":         fsType,
-		"mount_options":   options,
-	})
+	log = d.log.With(
+		"volume_mode", volumeModeFilesystem,
+		"volume_name", req.VolumeId,
+		"volume_context", req.VolumeContext,
+		"publish_context", req.PublishContext,
+		"source", source,
+		"fs_type", fsType,
+		"mount_options", options,
+	)
 
 	var noFormat bool
 	for _, ann := range annsNoFormatVolume {
@@ -181,7 +180,7 @@ func (d *Driver) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeRequ
 		}
 	}
 
-	err := checkAndRepairFilesystem(source)
+	err := checkAndRepairFilesystem(log, source)
 	if err != nil {
 		return nil, err
 	}
@@ -225,11 +224,11 @@ func (d *Driver) NodeUnstageVolume(_ context.Context, req *csi.NodeUnstageVolume
 		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Staging Target Path must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":           req.VolumeId,
-		"staging_target_path": req.StagingTargetPath,
-		"method":              "node_unstage_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"staging_target_path", req.StagingTargetPath,
+		"method", "node_unstage_volume",
+	)
 	log.Info("node unstage volume called")
 
 	mounted, err := d.mounter.IsMounted(req.StagingTargetPath)
@@ -269,12 +268,12 @@ func (d *Driver) NodePublishVolume(_ context.Context, req *csi.NodePublishVolume
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume Volume Capability must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":           req.VolumeId,
-		"staging_target_path": req.StagingTargetPath,
-		"target_path":         req.TargetPath,
-		"method":              "node_publish_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"staging_target_path", req.StagingTargetPath,
+		"target_path", req.TargetPath,
+		"method", "node_publish_volume",
+	)
 	log.Info("node publish volume called")
 
 	options := []string{"bind"}
@@ -310,11 +309,11 @@ func (d *Driver) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpublishVo
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":   req.VolumeId,
-		"target_path": req.TargetPath,
-		"method":      "node_unpublish_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"target_path", req.TargetPath,
+		"method", "node_unpublish_volume",
+	)
 	log.Info("node unpublish volume called")
 
 	mounted, err := d.mounter.IsMounted(req.TargetPath)
@@ -362,10 +361,10 @@ func (d *Driver) NodeGetCapabilities(_ context.Context, _ *csi.NodeGetCapabiliti
 		},
 	}
 
-	d.log.WithFields(logrus.Fields{
-		"node_capabilities": nscaps,
-		"method":            "node_get_capabilities",
-	}).Info("node get capabilities called")
+	d.log.With(
+		"node_capabilities", nscaps,
+		"method", "node_get_capabilities",
+	).Info("node get capabilities called")
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: nscaps,
 	}, nil
@@ -409,7 +408,7 @@ func disksLimit(platformID string, cores int64, topo compute.PCITopology) int64 
 // knows where to place the workload. The result of this function will be used
 // by the CO in ControllerPublishVolume.
 func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	d.log.WithField("method", "node_get_info").Info("node get info called")
+	d.log.With("method", "node_get_info").Info("node get info called")
 
 	// Retry the metadata lookup if it failed at startup: the driver container is not restarted on registration failure.
 	// Values stay in locals: driver state is never mutated here, so no locking is needed.
@@ -452,16 +451,16 @@ func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi
 		maxVolumesPerNode -= networkInterfacesCount
 	}
 
-	d.log.WithFields(logrus.Fields{
-		"secondaryDisksCount":       secondaryDisksCount,
-		"localDisksCount":           localDisksCount,
-		"filesystemsCount":          filesystemsCount,
-		"networkInterfacesCount":    networkInterfacesCount,
-		"nonCSISecondaryDisksCount": nonCSISecondaryDisksCount,
-		"disksLimit":                limit,
-		"pciTopology":               topo.String(),
-		"maxVolumesPerNode":         maxVolumesPerNode,
-	}).Info()
+	d.log.With(
+		"secondaryDisksCount", secondaryDisksCount,
+		"localDisksCount", localDisksCount,
+		"filesystemsCount", filesystemsCount,
+		"networkInterfacesCount", networkInterfacesCount,
+		"nonCSISecondaryDisksCount", nonCSISecondaryDisksCount,
+		"disksLimit", limit,
+		"pciTopology", topo.String(),
+		"maxVolumesPerNode", maxVolumesPerNode,
+	).Info()
 
 	return &csi.NodeGetInfoResponse{
 		NodeId:            hostID,
@@ -489,11 +488,11 @@ func (d *Driver) NodeGetVolumeStats(_ context.Context, req *csi.NodeGetVolumeSta
 		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats Volume Path must be provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":   req.VolumeId,
-		"volume_path": req.VolumePath,
-		"method":      "node_get_volume_stats",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"volume_path", req.VolumePath,
+		"method", "node_get_volume_stats",
+	)
 	log.Info("node get volume stats called")
 
 	mounted, err := d.mounter.IsMounted(volumePath)
@@ -517,10 +516,10 @@ func (d *Driver) NodeGetVolumeStats(_ context.Context, req *csi.NodeGetVolumeSta
 
 	// only can retrieve total capacity for a block device
 	if isBlock {
-		log.WithFields(logrus.Fields{
-			"volume_mode": volumeModeBlock,
-			"bytes_total": stats.totalBytes,
-		}).Info("node capacity statistics retrieved")
+		log.With(
+			"volume_mode", volumeModeBlock,
+			"bytes_total", stats.totalBytes,
+		).Info("node capacity statistics retrieved")
 
 		return &csi.NodeGetVolumeStatsResponse{
 			Usage: []*csi.VolumeUsage{
@@ -532,15 +531,15 @@ func (d *Driver) NodeGetVolumeStats(_ context.Context, req *csi.NodeGetVolumeSta
 		}, nil
 	}
 
-	log.WithFields(logrus.Fields{
-		"volume_mode":      volumeModeFilesystem,
-		"bytes_available":  stats.availableBytes,
-		"bytes_total":      stats.totalBytes,
-		"bytes_used":       stats.usedBytes,
-		"inodes_available": stats.availableInodes,
-		"inodes_total":     stats.totalInodes,
-		"inodes_used":      stats.usedInodes,
-	}).Info("node capacity statistics retrieved")
+	log.With(
+		"volume_mode", volumeModeFilesystem,
+		"bytes_available", stats.availableBytes,
+		"bytes_total", stats.totalBytes,
+		"bytes_used", stats.usedBytes,
+		"inodes_available", stats.availableInodes,
+		"inodes_total", stats.totalInodes,
+		"inodes_used", stats.usedInodes,
+	).Info("node capacity statistics retrieved")
 
 	return &csi.NodeGetVolumeStatsResponse{
 		Usage: []*csi.VolumeUsage{
@@ -571,11 +570,11 @@ func (d *Driver) NodeExpandVolume(_ context.Context, req *csi.NodeExpandVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeExpandVolume volume path not provided")
 	}
 
-	log := d.log.WithFields(logrus.Fields{
-		"volume_id":   req.VolumeId,
-		"volume_path": req.VolumePath,
-		"method":      "node_expand_volume",
-	})
+	log := d.log.With(
+		"volume_id", req.VolumeId,
+		"volume_path", req.VolumePath,
+		"method", "node_expand_volume",
+	)
 	log.Info("node expand volume called")
 
 	if req.GetVolumeCapability() != nil {
@@ -594,9 +593,9 @@ func (d *Driver) NodeExpandVolume(_ context.Context, req *csi.NodeExpandVolumeRe
 
 	r := mountutil.NewResizeFs(exec.New())
 
-	log = log.WithFields(logrus.Fields{
-		"device_path": devicePath,
-	})
+	log = log.With(
+		"device_path", devicePath,
+	)
 	log.Info("resizing volume")
 	if _, err := r.Resize(devicePath, volumePath); err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume could not resize volume %q (%q):  %v", volumeID, req.GetVolumePath(), err)
@@ -606,7 +605,7 @@ func (d *Driver) NodeExpandVolume(_ context.Context, req *csi.NodeExpandVolumeRe
 	return &csi.NodeExpandVolumeResponse{}, nil
 }
 
-func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeRequest, mountOptions []string, log *logrus.Entry) error {
+func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeRequest, mountOptions []string, log *zap.SugaredLogger) error {
 	source := req.StagingTargetPath
 	target := req.TargetPath
 
@@ -623,12 +622,12 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 		return err
 	}
 
-	log = log.WithFields(logrus.Fields{
-		"source_path":   source,
-		"volume_mode":   volumeModeFilesystem,
-		"fs_type":       fsType,
-		"mount_options": mountOptions,
-	})
+	log = log.With(
+		"source_path", source,
+		"volume_mode", volumeModeFilesystem,
+		"fs_type", fsType,
+		"mount_options", mountOptions,
+	)
 
 	if !mounted {
 		log.Info("mounting the volume")
@@ -642,7 +641,7 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	return nil
 }
 
-func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mountOptions []string, log *logrus.Entry) error {
+func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mountOptions []string, log *zap.SugaredLogger) error {
 	source, err := findAbsoluteDeviceByIDPath(req.VolumeId)
 	if err != nil {
 		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", req.VolumeId, err)
@@ -655,11 +654,11 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mo
 		return err
 	}
 
-	log = log.WithFields(logrus.Fields{
-		"source_path":   source,
-		"volume_mode":   volumeModeBlock,
-		"mount_options": mountOptions,
-	})
+	log = log.With(
+		"source_path", source,
+		"volume_mode", volumeModeBlock,
+		"mount_options", mountOptions,
+	)
 
 	if !mounted {
 		log.Info("mounting the volume")

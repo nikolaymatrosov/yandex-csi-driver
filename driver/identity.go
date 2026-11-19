@@ -21,7 +21,6 @@ import (
 	"context"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
@@ -32,10 +31,10 @@ func (d *Driver) GetPluginInfo(_ context.Context, _ *csi.GetPluginInfoRequest) (
 		VendorVersion: version,
 	}
 
-	d.log.WithFields(logrus.Fields{
-		"response": resp,
-		"method":   "get_plugin_info",
-	}).Info("get plugin info called")
+	d.log.With(
+		"response", resp,
+		"method", "get_plugin_info",
+	).Info("get plugin info called")
 	return resp, nil
 }
 
@@ -67,16 +66,16 @@ func (d *Driver) GetPluginCapabilities(_ context.Context, _ *csi.GetPluginCapabi
 		},
 	}
 
-	d.log.WithFields(logrus.Fields{
-		"response": resp,
-		"method":   "get_plugin_capabilities",
-	}).Info("get plugin capabitilies called")
+	d.log.With(
+		"response", resp,
+		"method", "get_plugin_capabilities",
+	).Info("get plugin capabitilies called")
 	return resp, nil
 }
 
 // Probe returns the health and readiness of the plugin
 func (d *Driver) Probe(_ context.Context, _ *csi.ProbeRequest) (*csi.ProbeResponse, error) {
-	d.log.WithField("method", "probe").Info("probe called")
+	d.log.With("method", "probe").Info("probe called")
 	d.readyMu.Lock()
 	defer d.readyMu.Unlock()
 

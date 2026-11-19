@@ -39,7 +39,8 @@ import (
 	"github.com/yandex-cloud/go-sdk/v2/pkg/options"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 )
@@ -85,7 +86,7 @@ type Driver struct {
 
 	srv     *grpc.Server
 	httpSrv http.Server
-	log     *logrus.Entry
+	log     *zap.SugaredLogger
 	mounter Mounter
 
 	disks     computesdk.DiskClient
@@ -109,14 +110,24 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	logrus.Info("starting driver")
+	cfg := zap.NewProductionConfig() // JSON to stderr, level info
+	cfg.Sampling = nil               // do not drop repeated messages
+	cfg.DisableStacktrace = true     // "method failed" errors are expected, no stack traces
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	zl, err := cfg.Build()
+	if err != nil {
+		return nil, err
+	}
+	log := zl.Sugar()
+
+	log.Info("starting driver")
 
 	if driverName == "" {
 		driverName = DefaultDriverName
 	}
 
 	var authKeys iamkey.Key
-	err := json.Unmarshal([]byte(authKeysStr), &authKeys)
+	err = json.Unmarshal([]byte(authKeysStr), &authKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +137,7 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		return nil, err
 	}
 
-	sdk, err := ycsdk.Build(ctx, options.WithCredentials(creds))
+	sdk, err := ycsdk.Build(ctx, options.WithCredentials(creds), options.WithLogger(zl))
 	if err != nil {
 		return nil, err
 	}
@@ -135,12 +146,12 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 	zone := ""
 	instanceID := ""
 
-	logrus.Infof("getting instance identity from metadata service")
+	log.Info("getting instance identity from metadata service")
 
 	instanceIdentity, err := ychelpers.GetInstanceIdentity()
 	if err != nil {
 		// ignore error if we can't get instance identity
-		logrus.Warningf("instance metadata unavailable at startup, NodeGetInfo will retry: %v", err)
+		log.Warnf("instance metadata unavailable at startup, NodeGetInfo will retry: %v", err)
 	} else {
 		region = instanceIdentity.Region
 		zone = instanceIdentity.AvailabilityZone
@@ -151,12 +162,12 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		version = "dev"
 	}
 
-	log := logrus.New().WithFields(logrus.Fields{
-		"region":      region,
-		"zone":        zone,
-		"instance_id": instanceID,
-		"version":     version,
-	})
+	log = log.With(
+		"region", region,
+		"zone", zone,
+		"instance_id", instanceID,
+		"version", version,
+	)
 
 	return &Driver{
 		name:                  driverName,
@@ -199,7 +210,7 @@ func (d *Driver) Run(ctx context.Context) error {
 	// remove the socket if it's already there. This can happen if we
 	// deploy a new version and the socket was created from the old running
 	// plugin.
-	d.log.WithField("socket", grpcAddr).Info("removing socket")
+	d.log.With("socket", grpcAddr).Info("removing socket")
 	if err := os.Remove(grpcAddr); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove unix domain socket file %s, error: %s", grpcAddr, err)
 	}
@@ -213,7 +224,7 @@ func (d *Driver) Run(ctx context.Context) error {
 	errHandler := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			d.log.WithError(err).WithField("method", info.FullMethod).Error("method failed")
+			d.log.With("error", err, "method", info.FullMethod).Error("method failed")
 		}
 		return resp, err
 	}
@@ -230,7 +241,7 @@ func (d *Driver) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := probeSocket(r.Context(), grpcAddr); err != nil {
-			d.log.WithError(err).Warn("health check failed")
+			d.log.With("error", err).Warn("health check failed")
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
@@ -241,10 +252,10 @@ func (d *Driver) Run(ctx context.Context) error {
 	}
 
 	d.ready = true // we're now ready to go!
-	d.log.WithFields(logrus.Fields{
-		"grpc_addr": grpcAddr,
-		"http_addr": d.address,
-	}).Info("starting server")
+	d.log.With(
+		"grpc_addr", grpcAddr,
+		"http_addr", d.address,
+	).Info("starting server")
 
 	var eg errgroup.Group
 	eg.Go(func() error {
