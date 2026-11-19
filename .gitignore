@@ -2,3 +2,4 @@ cmd/yandex-csi-driver/yandex-csi-driver
 .idea/
 docs/
 .vscode/
+test/e2e/_work/

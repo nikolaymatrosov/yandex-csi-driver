@@ -26,6 +26,10 @@ jobs:
         with:
           version: v2.15.0
           args: --timeout=5m
+      - name: shellcheck
+        run: |
+          find test/e2e -name '*.sh' -exec shellcheck {} +
+          bash test/e2e/lib_test.sh
   test:
     runs-on: ubuntu-latest
     steps:

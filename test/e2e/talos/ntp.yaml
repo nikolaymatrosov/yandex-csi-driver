@@ -1,0 +1,12 @@
+# NTP-серверы, рекомендованные Yandex Cloud (https://yandex.cloud/ru/docs/compute/tutorials/ntp).
+# Talos не берёт их из DHCP option 42, поэтому задаём явно.
+# Для образов aws/gcp обязателен: иначе платформа подставит NTP AWS/GCP (169.254.169.123), которых в Yandex нет.
+apiVersion: v1alpha1
+kind: TimeSyncConfig
+ntp:
+  servers:
+    - 0.ru.pool.ntp.org
+    - 1.ru.pool.ntp.org
+    - ntp0.NL.net
+    - ntp2.vniiftri.ru
+    - ntp.ix.ru

@@ -1,0 +1,6 @@
+# Один узел: снимаем taint control-plane, чтобы workload'ы планировались (Talos 1.14+: KubeNodeConfig)
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+taints:
+  node-role.kubernetes.io/control-plane:
+    $patch: delete
