@@ -164,20 +164,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		vol := disks[0]
 
-		if vol.Size != size {
-			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
-		}
-
-		// Yandex.Cloud reports the effective block size of every disk, including disks
-		// created before the driver started to set it. Fall back to the default rather
-		// than skipping the check, so that a mismatch is never reported as idempotent.
-		existingBlockSize := vol.BlockSize
-		if existingBlockSize == 0 {
-			existingBlockSize = defaultBlockSizeInBytes
-		}
-
-		if existingBlockSize != blockSize {
-			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested block size: %d, existing volume block size: %d", blockSize, existingBlockSize))
+		if err := checkExistingDisk(vol, size, blockSize); err != nil {
+			return nil, err
 		}
 
 		diskZone, diskRegion := ychelpers.ZoneRegion(vol.ZoneId)
@@ -807,4 +795,35 @@ func validateCapabilities(caps []*csi.VolumeCapability) []string {
 	}
 
 	return violations.List()
+}
+
+// checkExistingDisk decides whether an already existing disk satisfies a
+// repeated CreateVolume call. Parameters are checked first (a mismatch is final
+// in any status), then the status: only a READY disk is returned as created.
+// Aborted tells external-provisioner the operation is still in progress, so it
+// keeps retrying instead of giving up.
+func checkExistingDisk(vol *compute.Disk, size, blockSize int64) error {
+	if vol.Size != size {
+		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
+	}
+
+	// Yandex.Cloud reports the effective block size of every disk, including disks
+	// created before the driver started to set it. Fall back to the default rather
+	// than skipping the check, so that a mismatch is never reported as idempotent.
+	existingBlockSize := vol.BlockSize
+	if existingBlockSize == 0 {
+		existingBlockSize = defaultBlockSizeInBytes
+	}
+	if existingBlockSize != blockSize {
+		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested block size: %d, existing volume block size: %d", blockSize, existingBlockSize))
+	}
+
+	switch vol.Status {
+	case compute.Disk_READY:
+		return nil
+	case compute.Disk_CREATING, compute.Disk_DELETING:
+		return status.Errorf(codes.Aborted, "disk %q is in status %s", vol.Id, vol.Status)
+	default:
+		return status.Errorf(codes.Internal, "disk %q is in status %s", vol.Id, vol.Status)
+	}
 }

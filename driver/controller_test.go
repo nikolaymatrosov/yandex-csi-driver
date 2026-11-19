@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	compute "github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -77,6 +78,35 @@ func TestRoundSize(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := roundSize(tc.typeID, tc.in); got != tc.want {
 				t.Fatalf("roundSize(%q, %d) = %d, want %d", tc.typeID, tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCheckExistingDisk(t *testing.T) {
+	disk := func(size, block int64, st compute.Disk_Status) *compute.Disk {
+		return &compute.Disk{Size: size, BlockSize: block, Status: st}
+	}
+	for _, tc := range []struct {
+		name            string
+		vol             *compute.Disk
+		size, blockSize int64
+		code            codes.Code
+	}{
+		{"ready and matching", disk(10*giB, 4*kiB, compute.Disk_READY), 10 * giB, 4 * kiB, codes.OK},
+		{"size mismatch", disk(20*giB, 4*kiB, compute.Disk_READY), 10 * giB, 4 * kiB, codes.AlreadyExists},
+		{"size mismatch wins over status", disk(20*giB, 4*kiB, compute.Disk_CREATING), 10 * giB, 4 * kiB, codes.AlreadyExists},
+		{"block size mismatch", disk(10*giB, 8*kiB, compute.Disk_READY), 10 * giB, 4 * kiB, codes.AlreadyExists},
+		{"block size 0 means default", disk(10*giB, 0, compute.Disk_READY), 10 * giB, defaultBlockSizeInBytes, codes.OK},
+		{"block size 0 vs non-default request", disk(10*giB, 0, compute.Disk_READY), 10 * giB, 8 * kiB, codes.AlreadyExists},
+		{"creating", disk(10*giB, 4*kiB, compute.Disk_CREATING), 10 * giB, 4 * kiB, codes.Aborted},
+		{"deleting", disk(10*giB, 4*kiB, compute.Disk_DELETING), 10 * giB, 4 * kiB, codes.Aborted},
+		{"error", disk(10*giB, 4*kiB, compute.Disk_ERROR), 10 * giB, 4 * kiB, codes.Internal},
+		{"unspecified", disk(10*giB, 4*kiB, compute.Disk_STATUS_UNSPECIFIED), 10 * giB, 4 * kiB, codes.Internal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := status.Code(checkExistingDisk(tc.vol, tc.size, tc.blockSize)); got != tc.code {
+				t.Fatalf("code = %v, want %v", got, tc.code)
 			}
 		})
 	}
