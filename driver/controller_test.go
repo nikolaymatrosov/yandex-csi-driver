@@ -1,6 +1,8 @@
 package driver
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -136,6 +138,35 @@ func TestCheckExistingDiskKMS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := status.Code(checkExistingDisk(tc.vol, 10*giB, 4*kiB, tc.kms)); got != tc.code {
 				t.Fatalf("code = %v, want %v", got, tc.code)
+			}
+		})
+	}
+}
+
+func TestDiskLabels(t *testing.T) {
+	long := strings.Repeat("a", 100)
+	for _, tc := range []struct {
+		name   string
+		params map[string]string
+		want   map[string]string
+	}{
+		{"no metadata", map[string]string{"typeID": "network-ssd"}, map[string]string{"cluster_uuid": "uid"}},
+		{"both", map[string]string{
+			"csi.storage.k8s.io/pvc/name":      "data",
+			"csi.storage.k8s.io/pvc/namespace": "default",
+		}, map[string]string{"cluster_uuid": "uid", "csi-pvc-name": "data", "csi-pvc-namespace": "default"}},
+		{"empty values skipped", map[string]string{
+			"csi.storage.k8s.io/pvc/name":      "",
+			"csi.storage.k8s.io/pvc/namespace": "default",
+		}, map[string]string{"cluster_uuid": "uid", "csi-pvc-namespace": "default"}},
+		{"long name truncated to 63", map[string]string{
+			"csi.storage.k8s.io/pvc/name": long,
+		}, map[string]string{"cluster_uuid": "uid", "csi-pvc-name": long[:63]}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := diskLabels("uid", tc.params)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("diskLabels = %v, want %v", got, tc.want)
 			}
 		})
 	}

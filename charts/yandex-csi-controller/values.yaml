@@ -39,6 +39,7 @@ sidecars:
       worker-threads: 10
       v: 5
       timeout: 600s
+      extra-create-metadata: true
       
 
     resources: {}

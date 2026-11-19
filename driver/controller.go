@@ -193,7 +193,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		FolderId:    d.folderID,
 		Name:        volumeName,
 		Description: createdByYandex,
-		Labels:      map[string]string{"cluster_uuid": d.clusterUUID},
+		Labels:      diskLabels(d.clusterUUID, req.Parameters),
 		TypeId:      typeID,
 		ZoneId:      zone,
 		Size:        size,
@@ -836,4 +836,26 @@ func checkExistingDisk(vol *compute.Disk, size, blockSize int64, kmsKeyID string
 	default:
 		return status.Errorf(codes.Internal, "disk %q is in status %s", vol.Id, vol.Status)
 	}
+}
+
+// maxLabelValueLen is the limit of a label value in Yandex.Cloud.
+const maxLabelValueLen = 63
+
+// diskLabels returns the labels for a new disk: always cluster_uuid, plus the
+// PVC name and namespace that external-provisioner passes with
+// --extra-create-metadata.
+func diskLabels(clusterUUID string, params map[string]string) map[string]string {
+	labels := map[string]string{"cluster_uuid": clusterUUID}
+	for label, param := range map[string]string{
+		"csi-pvc-name":      "csi.storage.k8s.io/pvc/name",
+		"csi-pvc-namespace": "csi.storage.k8s.io/pvc/namespace",
+	} {
+		if v := params[param]; v != "" {
+			if len(v) > maxLabelValueLen {
+				v = v[:maxLabelValueLen]
+			}
+			labels[label] = v
+		}
+	}
+	return labels
 }
