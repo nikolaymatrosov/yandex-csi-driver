@@ -105,7 +105,36 @@ func TestCheckExistingDisk(t *testing.T) {
 		{"unspecified", disk(10*giB, 4*kiB, compute.Disk_STATUS_UNSPECIFIED), 10 * giB, 4 * kiB, codes.Internal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := status.Code(checkExistingDisk(tc.vol, tc.size, tc.blockSize)); got != tc.code {
+			if got := status.Code(checkExistingDisk(tc.vol, tc.size, tc.blockSize, "")); got != tc.code {
+				t.Fatalf("code = %v, want %v", got, tc.code)
+			}
+		})
+	}
+}
+
+func TestCheckExistingDiskKMS(t *testing.T) {
+	d := func(key string, st compute.Disk_Status) *compute.Disk {
+		vol := &compute.Disk{Size: 10 * giB, BlockSize: 4 * kiB, Status: st}
+		if key != "" {
+			vol.KmsKey = &compute.KMSKey{KeyId: key}
+		}
+		return vol
+	}
+	for _, tc := range []struct {
+		name string
+		vol  *compute.Disk
+		kms  string
+		code codes.Code
+	}{
+		{"same key", d("k1", compute.Disk_READY), "k1", codes.OK},
+		{"different key", d("k2", compute.Disk_READY), "k1", codes.AlreadyExists},
+		{"disk not encrypted, key requested", d("", compute.Disk_READY), "k1", codes.AlreadyExists},
+		{"key not requested, disk encrypted", d("k1", compute.Disk_READY), "", codes.OK},
+		{"key not requested, disk plain", d("", compute.Disk_READY), "", codes.OK},
+		{"key mismatch wins over status", d("k2", compute.Disk_CREATING), "k1", codes.AlreadyExists},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := status.Code(checkExistingDisk(tc.vol, 10*giB, 4*kiB, tc.kms)); got != tc.code {
 				t.Fatalf("code = %v, want %v", got, tc.code)
 			}
 		})

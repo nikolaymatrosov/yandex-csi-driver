@@ -116,6 +116,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		blockSize = parsedBlockSize
 	}
 
+	kmsKeyID := strings.TrimSpace(req.Parameters["kmsKeyID"])
+
 	size, err := extractStorage(req.CapacityRange, maximumVolumeSize(blockSize))
 	if err != nil {
 		return nil, status.Errorf(codes.OutOfRange, "invalid capacity range: %v", err)
@@ -164,7 +166,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		vol := disks[0]
 
-		if err := checkExistingDisk(vol, size, blockSize); err != nil {
+		if err := checkExistingDisk(vol, size, blockSize, kmsKeyID); err != nil {
 			return nil, err
 		}
 
@@ -196,6 +198,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		ZoneId:      zone,
 		Size:        size,
 		BlockSize:   blockSize,
+		KmsKeyId:    kmsKeyID,
 	}
 
 	if src := req.GetVolumeContentSource(); src != nil {
@@ -802,7 +805,7 @@ func validateCapabilities(caps []*csi.VolumeCapability) []string {
 // in any status), then the status: only a READY disk is returned as created.
 // Aborted tells external-provisioner the operation is still in progress, so it
 // keeps retrying instead of giving up.
-func checkExistingDisk(vol *compute.Disk, size, blockSize int64) error {
+func checkExistingDisk(vol *compute.Disk, size, blockSize int64, kmsKeyID string) error {
 	if vol.Size != size {
 		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
 	}
@@ -816,6 +819,13 @@ func checkExistingDisk(vol *compute.Disk, size, blockSize int64) error {
 	}
 	if existingBlockSize != blockSize {
 		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested block size: %d, existing volume block size: %d", blockSize, existingBlockSize))
+	}
+
+	// The key is compared only when the StorageClass sets one: a disk restored
+	// from an encrypted snapshot may inherit the snapshot's encryption, and
+	// comparing an empty parameter would make its CreateVolume retry fail forever.
+	if kmsKeyID != "" && vol.GetKmsKey().GetKeyId() != kmsKeyID {
+		return status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested kmsKeyID: %q, existing volume key: %q", kmsKeyID, vol.GetKmsKey().GetKeyId()))
 	}
 
 	switch vol.Status {
