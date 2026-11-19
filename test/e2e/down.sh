@@ -6,6 +6,9 @@ set -uo pipefail # no -e: every step runs even if the previous one failed
 . "$(dirname "$0")/lib.sh"
 state_load
 FOLDER_ID=${FOLDER_ID:-$(yc config get folder-id)}
+[ -n "$FOLDER_ID" ] || die "no folder id: set FOLDER_ID or run yc config set folder-id"
+LIST_FAILED=$WORK/down.list-failed
+rm -f "$LIST_FAILED"
 
 named() { # yc list JSON on stdin -> ids of items named $P or $P-*
   jq -r --arg p "$P" '.[] | (.name // "") as $n | select($n == $p or ($n | startswith($p + "-"))) | .id'
@@ -13,16 +16,21 @@ named() { # yc list JSON on stdin -> ids of items named $P or $P-*
 labeled() { # yc list JSON on stdin -> ids of items labeled cluster_uuid=$KS_UID
   jq -r --arg u "$KS_UID" '.[] | select($u != "" and .labels.cluster_uuid == $u) | .id'
 }
+yc_list() { # yc args...: list JSON; on failure print [] and leave a mark (works from subshells and pipes)
+  local out
+  if out=$(yc "$@" --format json); then printf '%s\n' "$out"; else log "down: yc $* failed"; touch "$LIST_FAILED"; echo '[]'; fi
+}
 driver_leftovers() {
-  { yc compute disk list --format json | labeled; yc compute snapshot list --format json | labeled; } | grep -c . || true
+  { yc_list compute disk list | labeled; yc_list compute snapshot list | labeled; } | grep -c . || true
 }
 no_driver_leftovers() { [ "$(driver_leftovers)" = 0 ]; }
-no_vms() { [ -z "$(yc compute instance list --format json | named)" ]; }
+no_vms() { [ -z "$(yc_list compute instance list | named)" ]; }
 
 log "down: prefix $P, folder $FOLDER_ID"
 
 # 1. let the driver delete its own disks and snapshots while the cluster is alive
 if kubectl get ns kube-system >/dev/null 2>&1; then
+  if [ -z "$KS_UID" ]; then KS_UID=$(kubectl get ns kube-system -o jsonpath='{.metadata.uid}'); fi
   log "down: deleting pods, VolumeSnapshots and PVCs"
   kubectl delete pod --all --grace-period=1 --wait=false
   kubectl delete volumesnapshot --all --wait=false
@@ -33,25 +41,25 @@ if kubectl get ns kube-system >/dev/null 2>&1; then
 fi
 
 # 2. VMs (boot disks go with them; CSI disks get detached)
-for id in $(yc compute instance list --format json | named); do
+for id in $(yc_list compute instance list | named); do
   yc compute instance delete "$id" --async >/dev/null
 done
 wait_until 600 no_vms || log "down: VMs still present after 10 min"
 
 # 3. disks and snapshots the driver left behind
-for id in $( { yc compute disk list --format json | labeled; yc compute disk list --format json | named; } | sort -u); do
+for id in $( { yc_list compute disk list | labeled; yc_list compute disk list | named; } | sort -u); do
   yc compute disk delete "$id" >/dev/null
 done
-for id in $(yc compute snapshot list --format json | labeled); do
+for id in $(yc_list compute snapshot list | labeled); do
   yc compute snapshot delete "$id" >/dev/null
 done
 
 # 4. network, KMS, IAM
-for id in $(yc vpc address list --format json | named); do yc vpc address delete "$id" >/dev/null; done
-for id in $(yc vpc security-group list --format json | named); do yc vpc security-group delete "$id" >/dev/null; done
-for id in $(yc vpc subnet list --format json | named); do yc vpc subnet delete "$id" >/dev/null; done
-for id in $(yc kms symmetric-key list --format json | named); do yc kms symmetric-key delete "$id" >/dev/null; done
-for id in $(yc iam service-account list --format json | named); do
+for id in $(yc_list vpc address list | named); do yc vpc address delete "$id" >/dev/null; done
+for id in $(yc_list vpc security-group list | named); do yc vpc security-group delete "$id" >/dev/null; done
+for id in $(yc_list vpc subnet list | named); do yc vpc subnet delete "$id" >/dev/null; done
+for id in $(yc_list kms symmetric-key list | named); do yc kms symmetric-key delete "$id" >/dev/null; done
+for id in $(yc_list iam service-account list | named); do
   for role in compute.editor compute.viewer; do
     yc resource-manager folder remove-access-binding "$FOLDER_ID" --role "$role" --subject "serviceAccount:$id" >/dev/null 2>&1
   done
@@ -60,16 +68,17 @@ done
 
 # 5. leftovers
 left=$({
-  yc compute instance list --format json | named
-  yc compute disk list --format json | named
-  yc compute disk list --format json | labeled
-  yc compute snapshot list --format json | labeled
-  yc vpc address list --format json | named
-  yc vpc security-group list --format json | named
-  yc vpc subnet list --format json | named
-  yc kms symmetric-key list --format json | jq '[.[] | select(.status == "ACTIVE" or .status == "INACTIVE")]' | named
-  yc iam service-account list --format json | named
+  yc_list compute instance list | named
+  yc_list compute disk list | named
+  yc_list compute disk list | labeled
+  yc_list compute snapshot list | labeled
+  yc_list vpc address list | named
+  yc_list vpc security-group list | named
+  yc_list vpc subnet list | named
+  yc_list kms symmetric-key list | jq '[.[] | select(.status == "ACTIVE" or .status == "INACTIVE")]' | named
+  yc_list iam service-account list | named
 } | sort -u | tr '\n' ' ')
+if [ -f "$LIST_FAILED" ]; then log "down: some yc list calls failed, cleanup not confirmed"; exit 1; fi
 if [ -n "${left// /}" ]; then
   log "down: LEFTOVERS: $left"
   exit 1
