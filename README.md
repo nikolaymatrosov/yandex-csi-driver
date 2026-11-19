@@ -105,7 +105,7 @@ Limitations:
 
 ### Nonreplicated and io-m3 disks
 
-For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB. The driver rounds the requested size up (a 10Gi PVC gets a 93 GiB disk and is Bound with 93Gi; resizing to 100Gi gives a 186 GiB disk and a 186Gi PV, while the PVC status keeps the requested 100Gi: that is how kubelet reports node expansion). If the rounded size exceeds the PVC limit or the maximum size for the disk's block size, the request fails with `OutOfRange`. Nonreplicated disks cannot have snapshots (a cloud limitation).
+For `network-ssd-nonreplicated` and `network-ssd-io-m3` the cloud requires the size to be a multiple of 93 GiB (93Gi, 186Gi, 279Gi, …). The driver does not round other sizes up, it rejects them with `OutOfRange`: a 10Gi PVC stays Pending with a `ProvisioningFailed` event, a resize to 100Gi fails with a `VolumeResizeFailed` event and the disk keeps its size (request 186Gi instead). So the PVC request, the PV and the disk always have the same size. Before v0.20.0 the driver rounded the size up; existing volumes keep working, but resizing them now needs a multiple of 93Gi. Nonreplicated disks cannot have snapshots (a cloud limitation).
 
 ### Encryption
 
