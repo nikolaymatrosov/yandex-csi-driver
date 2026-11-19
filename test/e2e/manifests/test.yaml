@@ -1,0 +1,22 @@
+# PVC csi-test 4Gi and a busybox pod in zone __ZONE__ (substituted by 02-move.sh).
+# On first start the pod writes the date to /data/marker; the file must survive moving the pod.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: csi-test}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: yc-network-ssd
+  resources: {requests: {storage: 4Gi}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: csi-test}
+spec:
+  nodeSelector: {failure-domain.beta.kubernetes.io/zone: __ZONE__}
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: app
+      image: busybox:1.37
+      command: [sh, -c, 'test -f /data/marker || date > /data/marker; sleep infinity']
+      volumeMounts: [{name: data, mountPath: /data}]
+  volumes: [{name: data, persistentVolumeClaim: {claimName: csi-test}}]
