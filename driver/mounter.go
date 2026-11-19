@@ -30,6 +30,8 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
+	mountutil "k8s.io/mount-utils"
+	kexec "k8s.io/utils/exec"
 )
 
 type findmntResponse struct {
@@ -79,7 +81,19 @@ type Mounter interface {
 
 	// IsBlockDevice checks whether the device at the path is a block device
 	IsBlockDevice(volumePath string) (bool, error)
+
+	// ResizeIfNeeded grows the filesystem on source (mounted at target) when
+	// the device is larger than the filesystem.
+	ResizeIfNeeded(source, target string) error
+
+	// DeviceOfMount returns the device mounted at the given path.
+	DeviceOfMount(path string) (string, error)
+
+	// FindDevice returns the absolute path of the device of the given volume.
+	FindDevice(volumeID string) (string, error)
 }
+
+var _ Mounter = (*mounter)(nil)
 
 type mounter struct {
 	log *zap.SugaredLogger
@@ -368,4 +382,26 @@ func (m *mounter) IsBlockDevice(devicePath string) (bool, error) {
 	}
 
 	return (stat.Mode & unix.S_IFMT) == unix.S_IFBLK, nil
+}
+
+func (m *mounter) ResizeIfNeeded(source, target string) error {
+	r := mountutil.NewResizeFs(kexec.New())
+	need, err := r.NeedResize(source, target)
+	if err != nil {
+		return fmt.Errorf("could not check if %q needs resize: %w", source, err)
+	}
+	if !need {
+		return nil
+	}
+	_, err = r.Resize(source, target)
+	return err
+}
+
+func (m *mounter) DeviceOfMount(path string) (string, error) {
+	dev, _, err := mountutil.GetDeviceNameFromMount(mountutil.New(""), path)
+	return dev, err
+}
+
+func (m *mounter) FindDevice(volumeID string) (string, error) {
+	return findAbsoluteDeviceByIDPath(volumeID)
 }

@@ -29,7 +29,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	mountutil "k8s.io/mount-utils"
 	"k8s.io/utils/exec"
 )
 
@@ -198,13 +197,8 @@ func (d *Driver) NodeStageVolume(_ context.Context, req *csi.NodeStageVolumeRequ
 		}
 
 		// a disk restored from a snapshot into a larger volume keeps the snapshot's filesystem size
-		r := mountutil.NewResizeFs(exec.New())
-		if need, err := r.NeedResize(source, target); err != nil {
-			return nil, status.Errorf(codes.Internal, "NodeStageVolume could not check if volume %q needs resize: %v", req.VolumeId, err)
-		} else if need {
-			if _, err := r.Resize(source, target); err != nil {
-				return nil, status.Errorf(codes.Internal, "NodeStageVolume could not resize volume %q: %v", req.VolumeId, err)
-			}
+		if err := d.mounter.ResizeIfNeeded(source, target); err != nil {
+			return nil, status.Errorf(codes.Internal, "NodeStageVolume could not resize volume %q: %v", req.VolumeId, err)
 		}
 	} else {
 		log.Info("source device is already mounted to the target path")
@@ -585,19 +579,16 @@ func (d *Driver) NodeExpandVolume(_ context.Context, req *csi.NodeExpandVolumeRe
 		}
 	}
 
-	mounter := mountutil.New("")
-	devicePath, _, err := mountutil.GetDeviceNameFromMount(mounter, volumePath)
+	devicePath, err := d.mounter.DeviceOfMount(volumePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to get device path for %q: %v", volumePath, err)
 	}
-
-	r := mountutil.NewResizeFs(exec.New())
 
 	log = log.With(
 		"device_path", devicePath,
 	)
 	log.Info("resizing volume")
-	if _, err := r.Resize(devicePath, volumePath); err != nil {
+	if err := d.mounter.ResizeIfNeeded(devicePath, volumePath); err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume could not resize volume %q (%q):  %v", volumeID, req.GetVolumePath(), err)
 	}
 
@@ -642,7 +633,7 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 }
 
 func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mountOptions []string, log *zap.SugaredLogger) error {
-	source, err := findAbsoluteDeviceByIDPath(req.VolumeId)
+	source, err := d.mounter.FindDevice(req.VolumeId)
 	if err != nil {
 		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", req.VolumeId, err)
 	}
