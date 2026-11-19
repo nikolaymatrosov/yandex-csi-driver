@@ -35,6 +35,12 @@ drop() { # PVC [DISK]: delete the pod and the PVC, wait for the disk of a bound 
   [ -z "$disk" ] || wait_until 180 gone_disk "$disk" || fail 03 "диск $1 удалён вместе с PVC" "нет" "$disk есть через 3 мин"
 }
 
+# an aborted check must not leave its 93Gi NRD disk behind: it would starve check 07 of quota
+trap 'for n in csi-pg-spread csi-pg-part csi-pg-nopart csi-pg-bad; do
+  kubectl delete pod "$n" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+  kubectl delete pvc "$n" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+done' EXIT
+
 state_set PG_SPREAD "$(pg_id "$P-pg-spread")"
 state_set PG_PART "$(pg_id "$P-pg-part" --strategy PARTITION --partition-count 2)"
 NRD=network-ssd-nonreplicated
