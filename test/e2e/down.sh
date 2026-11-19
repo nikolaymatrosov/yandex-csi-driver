@@ -5,10 +5,9 @@ set -uo pipefail # no -e: every step runs even if the previous one failed
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 state_load
-FOLDER_ID=${FOLDER_ID:-$(yc config get folder-id)}
-[ -n "$FOLDER_ID" ] || die "no folder id: set FOLDER_ID or run yc config set folder-id"
+FOLDER_ID=$(yc config get folder-id) # yc commands always use the profile's folder
+[ -n "$FOLDER_ID" ] || die "the yc profile has no folder-id (yc config set folder-id …)"
 LIST_FAILED=$WORK/down.list-failed
-rm -f "$LIST_FAILED"
 
 named() { # yc list JSON on stdin -> ids of items named $P or $P-*
   jq -r --arg p "$P" '.[] | (.name // "") as $n | select($n == $p or ($n | startswith($p + "-"))) | .id'
@@ -67,6 +66,7 @@ for id in $(yc_list iam service-account list | named); do
 done
 
 # 5. leftovers
+rm -f "$LIST_FAILED" # step 5 relists everything, so an earlier skipped deletion still shows up
 left=$({
   yc_list compute instance list | named
   yc_list compute disk list | named
