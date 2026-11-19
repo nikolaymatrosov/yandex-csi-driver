@@ -20,6 +20,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -325,6 +326,12 @@ func (d *Driver) NodeUnpublishVolume(_ context.Context, req *csi.NodeUnpublishVo
 		log.Info("target path is already unmounted")
 	}
 
+	// the CSI spec makes the plugin responsible for removing target_path; it is
+	// removed only after a successful unmount, a mounted path would fail with EBUSY
+	if err := os.Remove(req.TargetPath); err != nil && !os.IsNotExist(err) {
+		return nil, status.Errorf(codes.Internal, "could not remove target path %q: %v", req.TargetPath, err)
+	}
+
 	log.Info("unmounting volume is finished")
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
@@ -579,6 +586,10 @@ func (d *Driver) NodeExpandVolume(_ context.Context, req *csi.NodeExpandVolumeRe
 		}
 	}
 
+	if _, err := os.Stat(volumePath); os.IsNotExist(err) {
+		return nil, status.Errorf(codes.NotFound, "NodeExpandVolume volume path %q does not exist", volumePath)
+	}
+
 	devicePath, err := d.mounter.DeviceOfMount(volumePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to get device path for %q: %v", volumePath, err)
@@ -621,6 +632,10 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	)
 
 	if !mounted {
+		// the CSI spec makes the plugin responsible for creating target_path
+		if err := os.MkdirAll(target, 0o750); err != nil {
+			return status.Errorf(codes.Internal, "could not create target path %q: %v", target, err)
+		}
 		log.Info("mounting the volume")
 		if err := d.mounter.Mount(source, target, fsType, mountOptions...); err != nil {
 			return status.Error(codes.Internal, err.Error())
@@ -652,6 +667,15 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mo
 	)
 
 	if !mounted {
+		// a device is bind-mounted onto a file, which the plugin has to create
+		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
+			return status.Errorf(codes.Internal, "could not create the parent of target path %q: %v", target, err)
+		}
+		f, err := os.OpenFile(target, os.O_CREATE|os.O_RDONLY, 0o660)
+		if err != nil {
+			return status.Errorf(codes.Internal, "could not create target path %q: %v", target, err)
+		}
+		_ = f.Close()
 		log.Info("mounting the volume")
 		if err := d.mounter.Mount(source, target, "", mountOptions...); err != nil {
 			return status.Error(codes.Internal, err.Error())
