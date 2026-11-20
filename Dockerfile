@@ -26,9 +26,9 @@ RUN VERSION=$(cat VERSION) \
  && COMMIT=$(git rev-parse HEAD) \
  && GIT_TREE_STATE=$(git diff --quiet && echo clean || echo dirty) \
  && CGO_ENABLED=0 GOOS=$OS GOARCH=$ARCH go build -a \
-    -ldflags "-X github.com/deckhouse/yandex-csi-driver/driver.version=${VERSION} -X github.com/deckhouse/yandex-csi-driver/driver.commit=${COMMIT} -X github.com/deckhouse/yandex-csi-driver/driver.gitTreeState=${GIT_TREE_STATE}" \
+    -ldflags "-X github.com/nikolaymatrosov/yandex-csi-driver/driver.version=${VERSION} -X github.com/nikolaymatrosov/yandex-csi-driver/driver.commit=${COMMIT} -X github.com/nikolaymatrosov/yandex-csi-driver/driver.gitTreeState=${GIT_TREE_STATE}" \
     -o /go/bin/yandex-csi-driver \
-    github.com/deckhouse/yandex-csi-driver/cmd/yandex-csi-driver
+    github.com/nikolaymatrosov/yandex-csi-driver/cmd/yandex-csi-driver
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 

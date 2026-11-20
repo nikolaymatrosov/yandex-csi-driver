@@ -3,6 +3,6 @@ apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshotClass
 metadata:
   name: yc-csi-snapclass
-driver: yandex.csi.flant.com
+driver: yandex.csi.nikolaymatrosov.ru
 deletionPolicy: Delete
 {{- end }}

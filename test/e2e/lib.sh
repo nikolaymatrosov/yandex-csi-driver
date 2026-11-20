@@ -16,7 +16,7 @@ TALOS_IMAGE=${TALOS_IMAGE:-talos-metal-yc-v1-14-6}
 TALOS_INSTALLER=${TALOS_INSTALLER:-factory.talos.dev/metal-installer/b68af66f6cc572d8d192786b4c0f38890ca5a03150160aa6efc5462ba4d55503}
 CILIUM_VERSION=1.20.4
 SNAP_VERSION=v8.7.0
-DRIVER=yandex.csi.flant.com
+DRIVER=yandex.csi.nikolaymatrosov.ru
 
 WORK=$E2E_DIR/_work/$P
 STATE=$WORK/state.env

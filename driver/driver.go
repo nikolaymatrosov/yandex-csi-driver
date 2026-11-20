@@ -30,7 +30,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deckhouse/yandex-csi-driver/ychelpers"
+	"github.com/nikolaymatrosov/yandex-csi-driver/ychelpers"
 
 	computesdk "github.com/yandex-cloud/go-sdk/services/compute/v1"
 	ycsdk "github.com/yandex-cloud/go-sdk/v2"
@@ -48,10 +48,10 @@ import (
 const (
 	// DefaultDriverName defines the name that is used in Kubernetes and the CSI
 	// system for the canonical, official name of this plugin
-	DefaultDriverName = "yandex.csi.flant.com"
+	DefaultDriverName = "yandex.csi.nikolaymatrosov.ru"
 	// DefaultAddress is the default address that the csi plugin will serve its
 	// http handler on.
-	DefaultAddress           = "127.0.0.1:12302"
+	DefaultAddress           = "127.0.0.1:12312"
 	DefaultClusterUUID       = "default"
 	defaultWaitActionTimeout = 5 * time.Minute
 )

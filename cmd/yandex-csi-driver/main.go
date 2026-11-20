@@ -26,7 +26,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/deckhouse/yandex-csi-driver/driver"
+	"github.com/nikolaymatrosov/yandex-csi-driver/driver"
 )
 
 func main() {

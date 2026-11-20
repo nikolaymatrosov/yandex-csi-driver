@@ -1,4 +1,4 @@
-module github.com/deckhouse/yandex-csi-driver
+module github.com/nikolaymatrosov/yandex-csi-driver
 
 go 1.26.0
 

@@ -127,19 +127,19 @@ defaults:
 
   csiPath: /csi/
   csiSockName: csi.sock
-  csiPluginName: yandex.csi.flant.com
+  csiPluginName: yandex.csi.nikolaymatrosov.ru
   kubeletPath: /var/lib/kubelet
 
 controller:
   ports:
-    addressPort: 12302
+    addressPort: 12312
 
   extraArgs: {}
   resources: {}
 
 node:
   ports:
-    addressPort: 12402
+    addressPort: 12412
 
   extraArgs:
     v: 5

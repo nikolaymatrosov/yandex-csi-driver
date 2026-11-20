@@ -7,7 +7,7 @@ metadata:
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
 {{- end }}
-provisioner: yandex.csi.flant.com
+provisioner: yandex.csi.nikolaymatrosov.ru
 parameters:
   typeID: network-hdd
 allowVolumeExpansion: true
@@ -22,7 +22,7 @@ metadata:
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
 {{- end }}
-provisioner: yandex.csi.flant.com
+provisioner: yandex.csi.nikolaymatrosov.ru
 parameters:
   typeID: network-ssd
 allowVolumeExpansion: true
@@ -37,7 +37,7 @@ metadata:
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
 {{- end }}
-provisioner: yandex.csi.flant.com
+provisioner: yandex.csi.nikolaymatrosov.ru
 parameters:
   typeID: network-ssd-nonreplicated
 allowVolumeExpansion: true

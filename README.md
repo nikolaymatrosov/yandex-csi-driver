@@ -2,6 +2,12 @@
 
 A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for [Yandex Compute Disks](https://cloud.yandex.ru/docs/compute/concepts/disk).
 
+Since v1.0.0 the driver is named `yandex.csi.nikolaymatrosov.ru` (before: `yandex.csi.flant.com`, the name of the
+Deckhouse driver it was forked from) and its pods listen on ports 12312 (controller) and 12412 (node) instead of
+12302/12402, so it can run in the same cluster as the Deckhouse driver. The PV annotation that skips formatting is now
+`yandex.csi.nikolaymatrosov.ru/noformat`. PVs and VolumeSnapshotContents created by earlier versions keep the old name
+and are not served by v1.0.0.
+
 ## Releases
 
 The Yandex CSI driver follows [semantic versioning](https://semver.org/).
@@ -52,7 +58,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: yc-network-ssd-64k
-provisioner: yandex.csi.flant.com
+provisioner: yandex.csi.nikolaymatrosov.ru
 parameters:
   typeID: network-ssd
   blockSize: 64Ki
@@ -116,7 +122,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: yc-nrd-partition
-provisioner: yandex.csi.flant.com
+provisioner: yandex.csi.nikolaymatrosov.ru
 parameters:
   typeID: network-ssd-nonreplicated
   diskPlacementGroupId: <placement-group-id>
@@ -145,7 +151,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: yc-network-ssd-encrypted
-provisioner: yandex.csi.flant.com
+provisioner: yandex.csi.nikolaymatrosov.ru
 parameters:
   typeID: network-ssd
   kmsKeyID: abj0123456789abcdefg

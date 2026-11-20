@@ -27,7 +27,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	"github.com/deckhouse/yandex-csi-driver/ychelpers"
+	"github.com/nikolaymatrosov/yandex-csi-driver/ychelpers"
 
 	compute "github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 

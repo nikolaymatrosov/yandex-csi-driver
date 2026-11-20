@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/deckhouse/yandex-csi-driver/ychelpers"
+	"github.com/nikolaymatrosov/yandex-csi-driver/ychelpers"
 	"github.com/yandex-cloud/go-genproto/yandex/cloud/compute/v1"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -74,7 +74,7 @@ var (
 	// not formatted. Useful for cases if the user wants to reuse an existing
 	// volume.
 	annsNoFormatVolume = []string{
-		"com.flant.csi.yandex/noformat",
+		"yandex.csi.nikolaymatrosov.ru/noformat",
 	}
 )
 
