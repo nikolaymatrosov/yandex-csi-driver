@@ -41,8 +41,9 @@ vm() { # NAME ZONE SUBNET CONFIG [STATIC_IP]
 
 vm_ip() { yc compute instance get "$1" --format json | jq -r '.network_interfaces[0].primary_v4_address.one_to_one_nat.address'; }
 
-# Some YC public IPs pass no TCP at all; Talos then logs "dial tcp ...: i/o timeout" from boot.
-dead() { [ "$(yc compute instance get-serial-port-output "$1" | grep -c 'dial tcp.*i/o timeout' || true)" -gt 0 ]; }
+# Some YC public IPs pass no TCP at all; Talos then logs "dial tcp ...:443: i/o timeout" to the registries.
+# Only :443 counts: w2 boots before its ephemeral IP is in the SG, so its first dials to cp :50001/:6443 time out too.
+dead() { [ "$(yc compute instance get-serial-port-output "$1" | grep -c 'dial tcp .*:443: i/o timeout' || true)" -gt 0 ]; }
 
 new_cp() {
   yc vpc address delete "$P-cp" >/dev/null
