@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Copyright 2026 Nikolay Matrosov
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # 09 (best effort): restart the controller while a disk is CREATING; the retried CreateVolume must answer
 # Aborted, and the PVC binds only after the disk is READY. Uses csi-snap-a from 04, deletes csi-snap-a/b.
 set -euo pipefail

@@ -1,4 +1,18 @@
 #!/usr/bin/env bash
+# Copyright 2026 Nikolay Matrosov
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # Offline self-check of lib.sh helpers (no cloud, no cluster): bash test/e2e/lib_test.sh
 set -euo pipefail
 export E2E_PREFIX=libtest-$$
