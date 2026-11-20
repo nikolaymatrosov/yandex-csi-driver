@@ -11,5 +11,5 @@ sources:
 type: application
 
 # version equals appVersion; both are bumped in the release commit together with VERSION.
-version: 0.21.0
-appVersion: "0.21.0"
+version: 1.0.0
+appVersion: "1.0.0"
