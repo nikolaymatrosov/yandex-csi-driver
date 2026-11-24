@@ -41,7 +41,7 @@ var (
 	httpTimeoutSeconds = 15
 )
 
-const metadataHint = "check that the VM has gce-http-endpoint enabled and 169.254.169.254 is reachable from hostNetwork pods"
+const metadataHint = "check that the VM has gce-http-endpoint enabled and 169.254.169.254 is reachable from the pod"
 
 // GetInstanceIdentity reads the instance id and zone from the GCE-format metadata endpoint.
 func GetInstanceIdentity() (YandexInstanceIdentity, error) {

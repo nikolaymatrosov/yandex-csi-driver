@@ -15,7 +15,7 @@ spec:
     spec:
       
       serviceAccountName: {{ include "yandex-csi-node.name" . }}
-      hostNetwork: true
+      hostNetwork: {{ .Values.node.hostNetwork }}
       tolerations:
         - operator: Exists
 
@@ -65,6 +65,7 @@ spec:
           args:
             - --endpoint=unix://$(ADDRESS)
             - --address=$(POD_IP):{{ .ports.addressPort }}
+            - --folder-id={{ $.Values.folderID | b64dec }}
           env:
             - name: ADDRESS
               value: "{{ $.Values.defaults.csiPath }}/{{ $.Values.defaults.csiSockName }}"
@@ -81,11 +82,19 @@ spec:
                   apiVersion: v1
                   fieldPath: spec.nodeName
 
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: status.hostIP
+            {{- if or $.Values.nodeServiceAccountJSON $.Values.serviceAccountJSON }}
+
             - name: YANDEX_AUTH_KEYS
               valueFrom:
                 secretKeyRef:
                   name: {{ include "yandex-csi-controller.name" $ }}
                   key: {{ if $.Values.nodeServiceAccountJSON }}nodeServiceAccountJSON{{ else }}serviceAccountJSON{{ end }}
+            {{- end }}
 
           image: {{ $.Values.image.repository }}:{{ $.Values.image.tag | default (printf "v%s" $.Chart.AppVersion) }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}

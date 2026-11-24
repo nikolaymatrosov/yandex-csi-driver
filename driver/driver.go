@@ -31,8 +31,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nikolaymatrosov/yandex-csi-driver/ychelpers"
-
 	computesdk "github.com/yandex-cloud/go-sdk/services/compute/v1"
 	ycsdk "github.com/yandex-cloud/go-sdk/v2"
 	"github.com/yandex-cloud/go-sdk/v2/credentials"
@@ -77,6 +75,7 @@ type Driver struct {
 	endpoint          string
 	address           string
 	hostID            string
+	nodeIP            string // status.hostIP, finds the VM by its address when the metadata service has no instance id
 	folderID          string
 	waitActionTimeout time.Duration
 
@@ -107,7 +106,7 @@ type Driver struct {
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing Yandex Disks
-func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID string) (*Driver, error) {
+func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID, nodeIP string) (*Driver, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -127,13 +126,7 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		driverName = DefaultDriverName
 	}
 
-	var authKeys iamkey.Key
-	err = json.Unmarshal([]byte(authKeysStr), &authKeys)
-	if err != nil {
-		return nil, err
-	}
-
-	creds, err := credentials.ServiceAccountKey(&authKeys)
+	creds, err := newCredentials(authKeysStr)
 	if err != nil {
 		return nil, err
 	}
@@ -143,44 +136,18 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		return nil, err
 	}
 
-	region := ""
-	zone := ""
-	instanceID := ""
-
-	log.Info("getting instance identity from metadata service")
-
-	instanceIdentity, err := ychelpers.GetInstanceIdentity()
-	if err != nil {
-		// ignore error if we can't get instance identity
-		log.Warnf("instance metadata unavailable at startup, NodeGetInfo will retry: %v", err)
-	} else {
-		region = instanceIdentity.Region
-		zone = instanceIdentity.AvailabilityZone
-		instanceID = instanceIdentity.InstanceID
-	}
-
 	if version == "" {
 		version = "dev"
 	}
 
-	log = log.With(
-		"region", region,
-		"zone", zone,
-		"instance_id", instanceID,
-		"version", version,
-	)
-
-	return &Driver{
+	d := &Driver{
 		name:                  driverName,
 		publishInfoVolumeName: driverName + "/volume-name",
 
 		endpoint:          ep,
 		address:           address,
-		hostID:            instanceID,
+		nodeIP:            nodeIP,
 		folderID:          folderID,
-		region:            region,
-		zone:              zone,
-		mounter:           newMounter(log),
 		log:               log,
 		waitActionTimeout: defaultWaitActionTimeout,
 
@@ -189,7 +156,41 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID strin
 		disks:     computesdk.NewDiskClient(sdk),
 		instances: computesdk.NewInstanceClient(sdk),
 		snapshots: computesdk.NewSnapshotClient(sdk),
-	}, nil
+	}
+
+	log.Info("getting instance identity")
+	// A short budget for the API fallback: when the metadata times out (the yc-pod-identity proxy is not ready yet) the
+	// token cannot be fetched either, and a long startup trips the liveness probe. NodeGetInfo retries.
+	idCtx, idCancel := context.WithTimeout(ctx, 5*time.Second)
+	identity, err := d.instanceIdentity(idCtx)
+	idCancel()
+	if err != nil {
+		// on errors identity is empty
+		log.Warnf("instance identity unavailable at startup, NodeGetInfo will retry: %v", err)
+	}
+	d.hostID, d.zone, d.region = identity.InstanceID, identity.AvailabilityZone, identity.Region
+
+	d.log = log.With(
+		"region", d.region,
+		"zone", d.zone,
+		"instance_id", d.hostID,
+		"version", version,
+	)
+	d.mounter = newMounter(d.log)
+	return d, nil
+}
+
+// newCredentials uses the service account key when given, else the metadata token endpoint: the VM's service account,
+// or the pod's own one via Workload Identity Federation behind yc-pod-identity.
+func newCredentials(authKeysStr string) (credentials.Credentials, error) {
+	if authKeysStr == "" {
+		return credentials.InstanceServiceAccount(), nil
+	}
+	var key iamkey.Key
+	if err := json.Unmarshal([]byte(authKeysStr), &key); err != nil {
+		return nil, err
+	}
+	return credentials.ServiceAccountKey(&key)
 }
 
 // Run starts the CSI plugin by communication over the given endpoint

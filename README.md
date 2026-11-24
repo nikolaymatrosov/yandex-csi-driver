@@ -239,3 +239,50 @@ helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controll
 Install into `kube-system`, or into any namespace labeled `pod-security.kubernetes.io/enforce=privileged`
 (`kubectl label ns <ns> pod-security.kubernetes.io/enforce=privileged`). Otherwise Pod Security (`baseline`, the Talos default)
 rejects the privileged node pod (hostPath) and the controller pod (`hostNetwork`).
+
+### Without static keys (yc-pod-identity)
+
+With `serviceAccountJSON` and `nodeServiceAccountJSON` both empty the chart creates no Secret, and the driver takes IAM
+tokens from the metadata token endpoint: the VM's own service account, or, behind
+[yc-pod-identity](https://github.com/nikolaymatrosov/yc-pod-identity), the pod's own one via Workload Identity
+Federation. The proxy tells pods apart by their IP, so both pods must run without `hostNetwork`. It also answers only
+the token endpoint, so the node pod finds its VM in `folderID` with `instances.list` by the node IP
+(`status.hostIP`, the primary IPv4 of a network interface). Talos control-plane nodes are named by their VM ID, not
+by the VM name, so the lookup does not use node names. The same fallback works with static keys on `hostNetwork` when
+the metadata service does not return the instance ID.
+
+| Pod | Kubernetes SA | YC role on the folder |
+| --- | --- | --- |
+| controller | `kube-system/yandex-csi-controller` | `compute.editor` (+ `kms.keys.encrypterDecrypter` for encrypted disks) |
+| node | `kube-system/yandex-csi-node` | `compute.auditor` (`instances.get` and `instances.list`; VM metadata stays hidden) |
+
+Bind each Kubernetes SA to its own YC SA, for example in yc-pod-identity's terraform. The binding creates a federated
+credential on the YC SA for `system:serviceaccount:<ns>:<name>`; without it IAM refuses the token exchange
+(`invalid_client`):
+
+```hcl
+workloads = {
+  "kube-system/yandex-csi-controller" = { roles = ["compute.editor"] }
+  "kube-system/yandex-csi-node"       = { roles = ["compute.auditor"] }
+}
+```
+
+The `yandex.cloud/federated-yc-service-account-id` annotation on a Kubernetes SA tells the proxy which YC SA to issue
+the token for; a pod whose SA has no annotation gets 404 from the token endpoint.
+
+```bash
+IDS=$(terraform -chdir=terraform output -json service_account_ids)   # in the yc-pod-identity checkout
+SA=$(jq -r '."kube-system/yandex-csi-controller"' <<< "$IDS")
+SA_NODE=$(jq -r '."kube-system/yandex-csi-node"' <<< "$IDS")
+
+helm install yandex-csi oci://ghcr.io/nikolaymatrosov/charts/yandex-csi-controller --version <version> -n kube-system \
+  --set folderID=$(printf %s $FOLDER | base64) \
+  --set controller.hostNetwork=false \
+  --set node.hostNetwork=false \
+  --set controller.serviceAccountAnnotations.yandex\\.cloud/federated-yc-service-account-id=$SA \
+  --set node.serviceAccountAnnotations.yandex\\.cloud/federated-yc-service-account-id=$SA_NODE
+```
+
+`compute.editor` includes `compute.viewer`, so the controller SA can read the metadata of every VM in the folder,
+including Talos `user-data` with the control-plane CA keys. Static keys give the same access; WIF only replaces them
+with 12-hour tokens issued to that SA's pods.

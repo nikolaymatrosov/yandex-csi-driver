@@ -53,6 +53,7 @@ type fakeCloud struct {
 
 	// createErr and attachErr, when set, are returned by Disk.Create and Instance.AttachDisk.
 	createErr, attachErr error
+	instanceLists        int // Instance.List calls
 }
 
 type fakeDisks struct {
@@ -275,6 +276,17 @@ func (f fakeInstances) Get(_ context.Context, r *compute.GetInstanceRequest) (*c
 		return nil, notFound("instance")
 	}
 	return proto.Clone(i).(*compute.Instance), nil
+}
+
+func (f fakeInstances) List(_ context.Context, _ *compute.ListInstancesRequest) (*compute.ListInstancesResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.instanceLists++
+	resp := &compute.ListInstancesResponse{}
+	for _, i := range f.instances {
+		resp.Instances = append(resp.Instances, proto.Clone(i).(*compute.Instance))
+	}
+	return resp, nil
 }
 
 func (f fakeInstances) AttachDisk(_ context.Context, r *compute.AttachInstanceDiskRequest) (*operation.Operation, error) {

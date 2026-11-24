@@ -46,9 +46,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	authKeys := os.Getenv("YANDEX_AUTH_KEYS")
+	authKeys := os.Getenv("YANDEX_AUTH_KEYS") // empty: token from the metadata service
+	nodeIP := os.Getenv("HOST_IP")
 
-	drv, err := driver.NewDriver(*endpoint, authKeys, *folderID, *driverName, *address, *clusterUUID)
+	drv, err := driver.NewDriver(*endpoint, authKeys, *folderID, *driverName, *address, *clusterUUID, nodeIP)
 	if err != nil {
 		log.Fatalln(err)
 	}

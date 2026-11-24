@@ -49,6 +49,45 @@ const (
 
 type MountErrorType string
 
+// instanceMetadata is replaced in tests.
+var instanceMetadata = ychelpers.GetInstanceIdentity
+
+// instanceIdentity reads the VM id and zone from the metadata service. When it fails (behind yc-pod-identity the
+// metadata address answers only the token endpoint) it finds the VM in the folder by the node IP: Talos node names
+// are not always VM names.
+func (d *Driver) instanceIdentity(ctx context.Context) (ychelpers.YandexInstanceIdentity, error) {
+	identity, err := instanceMetadata()
+	if err == nil || d.nodeIP == "" {
+		return identity, err
+	}
+	d.log.With("error", err, "node_ip", d.nodeIP).Warn("instance metadata unavailable, looking up the VM by node IP")
+
+	var found []*compute.Instance
+	it := d.instances.Iterator(ctx, &compute.ListInstancesRequest{FolderId: d.folderID})
+	for it.Next() {
+		for _, ni := range it.Value().GetNetworkInterfaces() {
+			if ni.GetPrimaryV4Address().GetAddress() == d.nodeIP {
+				found = append(found, it.Value())
+				break
+			}
+		}
+	}
+	if err := it.Error(); err != nil {
+		return identity, fmt.Errorf("list instances in folder %q: %w", d.folderID, err)
+	}
+	// Several VMs with the same address (different networks in one folder): a wrong one would get our disks.
+	if len(found) != 1 {
+		ids := make([]string, len(found))
+		for i, inst := range found {
+			ids[i] = inst.GetId()
+		}
+		return identity, fmt.Errorf("want one VM with primary IPv4 %s in folder %q, found %d %v (metadata: %v)",
+			d.nodeIP, d.folderID, len(found), ids, err)
+	}
+	zone, region := ychelpers.ZoneRegion(found[0].GetZoneId())
+	return ychelpers.YandexInstanceIdentity{InstanceID: found[0].GetId(), AvailabilityZone: zone, Region: region}, nil
+}
+
 type MountError struct { // nolint: golint
 	Type    MountErrorType
 	Message string
@@ -409,21 +448,21 @@ func disksLimit(platformID string, cores int64, topo compute.PCITopology) int64 
 // should eventually return the droplet ID if possible. This is used so the CO
 // knows where to place the workload. The result of this function will be used
 // by the CO in ControllerPublishVolume.
-func (d *Driver) NodeGetInfo(_ context.Context, _ *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
+func (d *Driver) NodeGetInfo(ctx context.Context, _ *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.With("method", "node_get_info").Info("node get info called")
 
-	// Retry the metadata lookup if it failed at startup: the driver container is not restarted on registration failure.
+	// Retry the lookup if it failed at startup: the driver container is not restarted on registration failure.
 	// Values stay in locals: driver state is never mutated here, so no locking is needed.
 	hostID, zone, region := d.hostID, d.zone, d.region
 	if hostID == "" {
-		identity, err := ychelpers.GetInstanceIdentity()
+		identity, err := d.instanceIdentity(ctx)
 		if err != nil {
-			return nil, status.Errorf(codes.Unavailable, "instance metadata service unavailable: %v", err)
+			return nil, status.Errorf(codes.Unavailable, "instance identity unavailable: %v", err)
 		}
 		hostID, zone, region = identity.InstanceID, identity.AvailabilityZone, identity.Region
 	}
 
-	instance, err := d.instances.Get(context.TODO(), &compute.GetInstanceRequest{
+	instance, err := d.instances.Get(ctx, &compute.GetInstanceRequest{
 		InstanceId: hostID,
 		View:       0,
 	})

@@ -1,6 +1,10 @@
+# base64-encoded key of an SA with compute.editor; empty: the controller takes its token from the
+# metadata service (the VM's SA, or the pod's own SA via WIF behind yc-pod-identity)
 serviceAccountJSON: ""
-# base64-encoded key of an SA with compute.viewer; empty: node pods use serviceAccountJSON
+# base64-encoded key of an SA with compute.auditor; empty: node pods use serviceAccountJSON, or the metadata service
+# when both are empty
 nodeServiceAccountJSON: ""
+# base64-encoded folder ID: disks are created there, node pods look up their VM there
 folderID: ""
 # cluster_uuid label on disks and snapshots; empty: kube-system namespace UID
 # (looked up at install; under `helm template` the driver falls back to "default")
@@ -131,6 +135,10 @@ defaults:
   kubeletPath: /var/lib/kubelet
 
 controller:
+  # false: a regular pod; needed for WIF behind yc-pod-identity, which tells pods apart by IP
+  hostNetwork: true
+  # e.g. yandex.cloud/federated-yc-service-account-id: <YC SA ID>
+  serviceAccountAnnotations: {}
   ports:
     addressPort: 12312
 
@@ -138,6 +146,10 @@ controller:
   resources: {}
 
 node:
+  # false: a regular pod, talks to kubelet only over hostPath unix sockets; needed for WIF behind yc-pod-identity
+  hostNetwork: true
+  # e.g. yandex.cloud/federated-yc-service-account-id: <YC SA ID>
+  serviceAccountAnnotations: {}
   ports:
     addressPort: 12412
 
