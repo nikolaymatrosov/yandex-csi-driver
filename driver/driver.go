@@ -159,8 +159,9 @@ func NewDriver(ep, authKeysStr, folderID, driverName, address, clusterUUID, node
 	}
 
 	log.Info("getting instance identity")
-	// A short budget for the API fallback: when the metadata times out (the yc-pod-identity proxy is not ready yet) the
-	// token cannot be fetched either, and a long startup trips the liveness probe. NodeGetInfo retries.
+	// 5 s for the whole lookup: when the metadata times out (15 s, the yc-pod-identity proxy is not ready yet) the API
+	// fallback is skipped, its token comes from the same proxy; a longer startup trips the liveness probe.
+	// NodeGetInfo retries.
 	idCtx, idCancel := context.WithTimeout(ctx, 5*time.Second)
 	identity, err := d.instanceIdentity(idCtx)
 	idCancel()
